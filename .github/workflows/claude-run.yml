@@ -94,13 +94,11 @@ jobs:
             claude \
               --print "$(cat $TASK_FILE)" \
               --allowedTools "Read,Write,Edit,Bash,Glob,Grep" \
-              --dangerouslySkipPermissions \
               2>&1 || echo "Claude Code exited with error"
           else
             claude \
               --print "Implement Day ${DAY} of Project Pantheon as described in docs/PROJECT_PLAN.md" \
               --allowedTools "Read,Write,Edit,Bash,Glob,Grep" \
-              --dangerouslySkipPermissions \
               2>&1 || echo "Claude Code exited with error"
           fi
 
