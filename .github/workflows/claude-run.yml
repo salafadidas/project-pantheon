@@ -46,7 +46,10 @@ jobs:
           node-version: '20'
 
       - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          which claude || (echo "claude not in PATH, checking npm bin..." && ls $(npm root -g)/../bin/ | grep claude)
+          claude --version
 
       - name: Extract day number from issue
         id: extract_day
@@ -81,15 +84,25 @@ jobs:
 
           TASK_FILE=".github/day-tasks/day${DAY}.md"
           if [ -f "$TASK_FILE" ]; then
-            TASK=$(cat "$TASK_FILE")
+            echo "Using task file: $TASK_FILE"
           else
-            TASK="Implement Day ${DAY} of Project Pantheon as described in docs/PROJECT_PLAN.md"
+            echo "Task file not found, using default"
+            TASK_FILE=""
           fi
 
-          claude --print "$TASK" \
-            --allowedTools "Read,Write,Edit,Bash,Glob,Grep" \
-            --model claude-sonnet-4-6 \
-            || echo "Claude Code run completed"
+          if [ -n "$TASK_FILE" ]; then
+            claude \
+              --print "$(cat $TASK_FILE)" \
+              --allowedTools "Read,Write,Edit,Bash,Glob,Grep" \
+              --dangerouslySkipPermissions \
+              2>&1 || echo "Claude Code exited with error"
+          else
+            claude \
+              --print "Implement Day ${DAY} of Project Pantheon as described in docs/PROJECT_PLAN.md" \
+              --allowedTools "Read,Write,Edit,Bash,Glob,Grep" \
+              --dangerouslySkipPermissions \
+              2>&1 || echo "Claude Code exited with error"
+          fi
 
       - name: Commit and push changes
         env:
