@@ -3,7 +3,7 @@ Factory for creating and configuring LangGraph agents.
 """
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from psycopg_pool import AsyncConnectionPool
 from langgraph.graph import StateGraph
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -12,10 +12,21 @@ from langgraph.prebuilt import create_react_agent
 from langgraph.utils.config import get_store
 
 from db.postgres_utils import create_memory_store
-
 from agent.prompts import MEMORY_SYSTEM_PROMPT
+from llm.provider import LLMProvider
 
 logger = logging.getLogger(__name__)
+
+# Module-level singleton — initialized once, shared across all agent creation
+_llm_provider: Optional[LLMProvider] = None
+
+
+def get_llm_provider(default_model: str = "gpt-4o-mini") -> LLMProvider:
+    """Get or create the shared LLMProvider singleton."""
+    global _llm_provider
+    if _llm_provider is None:
+        _llm_provider = LLMProvider(default_model=default_model)
+    return _llm_provider
 
 class AgentFactory:
     """Factory for creating and configuring LangGraph agents"""
@@ -109,12 +120,22 @@ class AgentFactory:
                 *state["messages"]
             ]
         
+        # Use LiteLLM provider for model resolution (supports Claude, GPT, Gemini)
+        provider = get_llm_provider(default_model=llm_model)
+        chat_model = provider.get_chat_model(llm_model)
+
+        logger.info(
+            "Creating agent with LiteLLM model: %s (key=%s)",
+            provider.get_litellm_model_string(llm_model),
+            llm_model,
+        )
+
         return create_react_agent(
-            f"openai:{llm_model}",
-            prompt=user_specific_prompt,  # Use the closure instead of the class method
+            chat_model,
+            prompt=user_specific_prompt,
             tools=[create_manage_memory_tool(namespace=namespace)],
             checkpointer=checkpointer,
-            store=store
+            store=store,
         )
     
     @staticmethod

@@ -12,3 +12,16 @@ class AgentConfig(BaseConfig):
     llm_model: str = os.getenv("LLM_MODEL", "gpt-4o-mini")
     embed_model: str = os.getenv("EMBED_MODEL", "openai:text-embedding-3-small")
     vector_dims: int = int(os.getenv("VECTOR_DIMS", "1536"))
+
+    # Multi-model support (Day 2)
+    debate_models: str = os.getenv(
+        "DEBATE_MODELS",
+        "claude-sonnet,gpt-4o,gemini-2.5-pro"
+    )
+    pm_model: str = os.getenv("PM_MODEL", "gpt-4o-mini")
+    synthesizer_model: str = os.getenv("SYNTHESIZER_MODEL", "claude-sonnet")
+
+    @property
+    def debate_model_list(self) -> list[str]:
+        """Parse comma-separated debate models into a list."""
+        return [m.strip() for m in self.debate_models.split(",") if m.strip()]

@@ -26,8 +26,15 @@ services:
       - EMBED_MODEL=${EMBED_MODEL:-openai:text-embedding-3-small}
       - VECTOR_DIMS=${VECTOR_DIMS:-1536}
       
-      # API Keys
+      # Multi-Model Configuration
+      - DEBATE_MODELS=${DEBATE_MODELS:-claude-sonnet,gpt-4o,gemini-2.5-pro}
+      - PM_MODEL=${PM_MODEL:-gpt-4o-mini}
+      - SYNTHESIZER_MODEL=${SYNTHESIZER_MODEL:-claude-sonnet}
+
+      # LLM Provider API Keys (via LiteLLM)
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-true}
