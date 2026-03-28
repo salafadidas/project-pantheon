@@ -1,0 +1,145 @@
+name: 🤖 Claude Code - Run Day Task
+
+on:
+  # Triggered by commenting /run on a checkpoint issue from iPhone GitHub app
+  issue_comment:
+    types: [created]
+  # Or manually triggered from GitHub app Actions tab
+  workflow_dispatch:
+    inputs:
+      day_number:
+        description: 'Day to implement (3-10)'
+        required: true
+        type: string
+      issue_number:
+        description: 'GitHub Issue number for this day'
+        required: false
+        type: string
+
+jobs:
+  run-day:
+    # Only run if comment is /run from the repo owner, or manual dispatch
+    if: |
+      (github.event_name == 'issue_comment' &&
+       contains(github.event.comment.body, '/run') &&
+       github.event.comment.user.login == 'salafadidas') ||
+      github.event_name == 'workflow_dispatch'
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Extract day number from issue
+        id: extract_day
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "DAY=${{ inputs.day_number }}" >> $GITHUB_ENV
+            echo "ISSUE=${{ inputs.issue_number }}" >> $GITHUB_ENV
+          else
+            # Extract day from issue title (e.g. "Day 3:")
+            ISSUE_TITLE="${{ github.event.issue.title }}"
+            DAY=$(echo "$ISSUE_TITLE" | grep -oP '(?<=Day )\d+' || echo "unknown")
+            echo "DAY=$DAY" >> $GITHUB_ENV
+            echo "ISSUE=${{ github.event.issue.number }}" >> $GITHUB_ENV
+            echo "TASK_BODY<<EOF" >> $GITHUB_ENV
+            echo "${{ github.event.issue.body }}" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+          fi
+
+      - name: Comment started on issue
+        if: env.ISSUE != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment ${{ env.ISSUE }} \
+            --body "🚀 **Claude Code started Day ${{ env.DAY }} implementation**
+
+            Running on GitHub Actions runner. Will commit code and create PR when done.
+
+            ⏱️ Started: $(date -u '+%Y-%m-%d %H:%M UTC')" \
+            --repo ${{ github.repository }}
+
+      - name: Run Claude Code implementation
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GIT_AUTHOR_NAME: "Claude Code Bot"
+          GIT_AUTHOR_EMAIL: "claude-bot@project-pantheon"
+        run: |
+          # Configure git
+          git config user.name "Claude Code Bot"
+          git config user.email "claude-bot@project-pantheon"
+
+          # Create a branch for this day's work
+          BRANCH="day-${{ env.DAY }}-implementation"
+          git checkout -b "$BRANCH" 2>/dev/null || git checkout "$BRANCH"
+
+          # Read the task from issue body or use default plan
+          TASK_FILE=".github/day-tasks/day${{ env.DAY }}.md"
+
+          if [ -f "$TASK_FILE" ]; then
+            TASK=$(cat "$TASK_FILE")
+          else
+            TASK="Implement Day ${{ env.DAY }} of Project Pantheon as described in docs/PROJECT_PLAN.md"
+          fi
+
+          # Run Claude Code in non-interactive mode
+          claude --print "$TASK" \
+            --allowedTools "Read,Write,Edit,Bash,Glob,Grep" \
+            --model claude-sonnet-4-6 \
+            || echo "Claude Code run completed"
+
+      - name: Commit and push changes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "feat: Day ${{ env.DAY }} implementation via GitHub Actions"
+            git push origin "day-${{ env.DAY }}-implementation" --force
+
+            # Create PR
+            gh pr create \
+              --title "Day ${{ env.DAY }}: Implementation" \
+              --body "Auto-implemented by Claude Code bot, triggered from iPhone GitHub app.
+
+              Closes #${{ env.ISSUE }}" \
+              --repo ${{ github.repository }} \
+              || echo "PR already exists or no changes"
+          fi
+
+      - name: Comment completion on issue
+        if: always() && env.ISSUE != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment ${{ env.ISSUE }} \
+            --body "✅ **Day ${{ env.DAY }} implementation complete!**
+
+            Check the PR for code changes. Review and merge to continue.
+
+            **Next step:** Close this issue and comment \`/run\` on Day ${{ env.DAY + 1 }} issue to continue." \
+            --repo ${{ github.repository }}
