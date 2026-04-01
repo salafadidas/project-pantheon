@@ -16,3 +16,6 @@ watchdog
 litellm
 langchain-google-genai
 langchain-anthropic
+fastapi
+uvicorn[standard]
+websockets
