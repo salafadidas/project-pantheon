@@ -17,8 +17,8 @@ Build a multi-AI-agent collaboration system where multiple LLM providers (Claude
 
 | Day | Task | Model | Status |
 |-----|------|-------|--------|
-| 1 | Fork repo, environment setup, docs | Haiku 4.5 | In Progress |
-| 2 | LiteLLM multi-model provider + cost tracking | Sonnet 4.6 | Pending |
+| 1 | Fork repo, environment setup, docs | Haiku 4.5 | Done |
+| 2 | LiteLLM multi-model provider + cost tracking | Sonnet 4.6 | Done |
 | 3 | LangGraph state expansion + debate node migration | Sonnet 4.6 | Done |
 | 4 | PM router, researcher, voter, synthesizer nodes | Sonnet 4.6 | Done |
 | 5 | Telegram bot commands + FastAPI REST/WebSocket | Sonnet 4.6 | Done |
