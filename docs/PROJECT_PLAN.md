@@ -1,13 +1,13 @@
 ---
 title: Project Pantheon — Master Implementation Plan
-version: v2.0
+version: v2.1
 date: 2026-04-01
-status: Active — Stage 1 (PoC) in progress
+status: Active — Stage 1 (PoC) Day 6 in progress
 ---
 
 # Project Pantheon — Master Implementation Plan
 
-> **v2.0 | 2026-04-01** — Single source of truth. For NotebookLM: always upload this file; check `version:` on line 3 to confirm currency.
+> **v2.1 | 2026-04-01** — Single source of truth. For NotebookLM: always upload this file; check `version:` on line 3 to confirm currency.
 
 ## 1. Project Overview
 
@@ -70,7 +70,7 @@ Project Pantheon is a cross-engine multi-agent collaboration system where multip
 
 | Day | Task | Key Deliverables | Model | Status |
 |-----|------|-----------------|-------|--------|
-| 6 | React frontend Phase UI | `PhaseTimeline.tsx`, `DiscussionThread.tsx`, `CostMonitor.tsx`, `TaskSubmit.tsx`, `useSession` hook | Sonnet 4.6 | ⏳ Pending |
+| 6 | React frontend Phase UI | `PhaseTimeline.tsx`, `DiscussionThread.tsx`, `CostMonitor.tsx`, `TaskSubmit.tsx`, `useSession` hook | Sonnet 4.6 | 🔄 In Progress |
 | 7 | Utility layer | `utils/timeout.py`, `utils/logging_config.py` (structlog), `utils/retry.py` | Haiku 4.5 | ⏳ Pending |
 | 8 | Test suite | pytest, 80%+ coverage on `graph/` and `llm/` | Haiku 4.5 | ⏳ Pending |
 | 9 | Health + demo prep | `api/v1/health.py`, `scripts/demo.py`, `.env.example` update | Haiku 4.5 | ⏳ Pending |
