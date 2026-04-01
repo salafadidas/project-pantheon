@@ -3,8 +3,15 @@ Main entry point for the Telegram bot + FastAPI application.
 """
 
 import asyncio
-import logging
+import os
 from redis.asyncio import Redis
+
+from utils.logging_config import configure_logging, get_logger
+
+configure_logging(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    json_logs=os.getenv("LOG_JSON", "true").lower() != "false",
+)
 
 import uvicorn
 from fastapi import FastAPI
@@ -19,7 +26,7 @@ from core.exceptions import ConfigurationError
 from api.v1.sessions import router as sessions_router
 from api.v1.websocket import router as ws_router
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # --------------------------------------------------------------------------- #
 # FastAPI app                                                                  #

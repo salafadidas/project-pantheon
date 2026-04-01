@@ -19,3 +19,4 @@ langchain-anthropic
 fastapi
 uvicorn[standard]
 websockets
+structlog
