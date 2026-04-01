@@ -1,92 +1,59 @@
-import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import useSWR from 'swr';
-import UserSelector from '../components/UserSelector';
-import MemoryList from '../components/MemoryList';
-
-// Fetcher function for SWR
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+import TaskSubmit from '../components/TaskSubmit';
 
 export default function Home() {
-  const [selectedUser, setSelectedUser] = useState<string | null>(null);
-
-  // Fetch users
-  const { data: users, error: usersError, isLoading: usersLoading } = useSWR('/api/users', fetcher);
-
-  // Fetch memories for selected user
-  const { data: memories, error: memoriesError, isLoading: memoriesLoading } = useSWR(
-    selectedUser ? `/api/memories/${selectedUser}` : null,
-    fetcher
-  );
-
-  // Auto-select first user if none selected
-  useEffect(() => {
-    if (Array.isArray(users) && users.length > 0 && !selectedUser) {
-      setSelectedUser(users[0].user_id);
-    }
-  }, [users, selectedUser]);
-
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <>
       <Head>
-        <title>LangGraph Telegram Bot - Memory Dashboard</title>
-        <meta name="description" content="View user memories from the LangGraph Telegram Bot" />
+        <title>Project Pantheon</title>
+        <meta name="description" content="Multi-AI-agent collaboration: Claude × GPT-4o × Gemini" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <main className="container mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold text-center mb-8 text-gray-900 dark:text-white">
-          LangGraph Telegram Bot - Memory Dashboard
-        </h1>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <header className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6 py-4">
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+            Project Pantheon
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+            Multi-agent collaboration · Claude × GPT-4o × Gemini
+          </p>
+        </header>
 
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6 mb-8">
-            <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">User Memories</h2>
-            
-            {usersError ? (
-              <div className="p-4 bg-red-100 text-red-700 rounded-md mb-4">
-                Error loading users: {usersError.message}
-              </div>
-            ) : (
-              <UserSelector
-                users={Array.isArray(users) ? users : []}
-                selectedUser={selectedUser}
-                onSelectUser={setSelectedUser}
-                isLoading={usersLoading}
-              />
-            )}
-          </div>
-
-          <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
-                {selectedUser ? `Memories for ${selectedUser}` : 'Select a user to view memories'}
-              </h2>
-              
-              {selectedUser && (
-                <div className="text-sm text-gray-500 dark:text-gray-400">
-                  {memories?.length || 0} memories found
-                </div>
-              )}
+        <main className="max-w-2xl mx-auto px-4 py-12 space-y-8">
+          {/* Flow diagram */}
+          <section className="text-center space-y-2">
+            <div className="flex items-center justify-center gap-2 text-sm text-gray-600 dark:text-gray-400 flex-wrap">
+              {[
+                { icon: '🧭', label: 'Route' },
+                { icon: '🔬', label: 'Research' },
+                { icon: '💬', label: 'Debate' },
+                { icon: '🗳️', label: 'Vote' },
+                { icon: '📝', label: 'Synthesize' },
+              ].map((phase, i, arr) => (
+                <span key={phase.label} className="flex items-center gap-2">
+                  <span className="flex items-center gap-1 px-3 py-1 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 font-medium">
+                    {phase.icon} {phase.label}
+                  </span>
+                  {i < arr.length - 1 && (
+                    <span className="text-gray-400">→</span>
+                  )}
+                </span>
+              ))}
             </div>
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              Three AI models collaborate, debate, and reach consensus on your task.
+            </p>
+          </section>
 
-            {memoriesError ? (
-              <div className="p-4 bg-red-100 text-red-700 rounded-md">
-                Error loading memories: {memoriesError.message}
-              </div>
-            ) : (
-              <MemoryList
-                memories={Array.isArray(memories) ? memories : []}
-                isLoading={!!memoriesLoading || !!(selectedUser && !memories)}
-              />
-            )}
-          </div>
-        </div>
-      </main>
+          {/* Submission form */}
+          <TaskSubmit />
+        </main>
 
-      <footer className="py-6 text-center text-gray-500 dark:text-gray-400 text-sm">
-        <p>LangGraph Telegram Bot Dashboard &copy; {new Date().getFullYear()}</p>
-      </footer>
-    </div>
+        <footer className="py-6 text-center text-xs text-gray-400 dark:text-gray-600">
+          Project Pantheon — Stage 1 PoC
+        </footer>
+      </div>
+    </>
   );
 }
