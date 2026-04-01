@@ -1,13 +1,13 @@
 ---
 title: Project Pantheon — Master Implementation Plan
-version: v2.5
+version: v2.6
 date: 2026-04-01
-status: Active — Stage 1 (PoC) Day 8 in progress
+status: Active — Stage 1 (PoC) Day 9 up next
 ---
 
 # Project Pantheon — Master Implementation Plan
 
-> **v2.5 | 2026-04-01** — Single source of truth. For NotebookLM: always upload this file; check `version:` on line 3 to confirm currency.
+> **v2.6 | 2026-04-01** — Single source of truth. For NotebookLM: always upload this file; check `version:` on line 3 to confirm currency.
 
 ## 1. Project Overview
 
@@ -30,7 +30,7 @@ Project Pantheon is a cross-engine multi-agent collaboration system where multip
 
 ## 2. Current Progress Snapshot
 
-> Last updated: 2026-04-01 | Stage 1 PoC — Days 1–7 complete, Day 8 in progress
+> Last updated: 2026-04-01 | Stage 1 PoC — Days 1–8 complete, Day 9 up next
 
 | Component | Files | Status |
 |-----------|-------|--------|
@@ -43,7 +43,7 @@ Project Pantheon is a cross-engine multi-agent collaboration system where multip
 | Telegram bot (Pantheon commands) | `telegram_adapter/telegram_bot.py` | ✅ Complete |
 | React Phase UI components | `frontend/components/`, `frontend/pages/session/[id].tsx` | ✅ Complete |
 | Utility layer (timeout, logging, retry) | `utils/timeout.py`, `utils/logging_config.py`, `utils/retry.py` | ✅ Complete |
-| Test suite | `tests/` | ❌ Not started |
+| Test suite | `tests/` (8 modules, 60+ test cases) | ✅ Complete |
 | Health endpoint + demo script | `api/v1/health.py`, `scripts/demo.py` | ❌ Not started |
 | CI/CD pipeline | `.github/workflows/ci.yml` | ❌ Not started |
 | Handover docs | `docs/DEMO_SCRIPT.md`, `docs/HANDOVER.md` | ❌ Not started |
@@ -72,7 +72,7 @@ Project Pantheon is a cross-engine multi-agent collaboration system where multip
 |-----|------|-----------------|-------|--------|
 | 6 | React frontend Phase UI | `PhaseTimeline.tsx`, `DiscussionThread.tsx`, `CostMonitor.tsx`, `TaskSubmit.tsx`, `useSession` hook | Sonnet 4.6 | ✅ Done |
 | 7 | Utility layer | `utils/timeout.py`, `utils/logging_config.py` (structlog), `utils/retry.py` | Haiku 4.5 | ✅ Done |
-| 8 | Test suite | pytest, 80%+ coverage on `graph/` and `llm/` | Haiku 4.5 | 🔄 In Progress |
+| 8 | Test suite | pytest, 80%+ coverage on `graph/` and `llm/` | Haiku 4.5 | ✅ Done |
 | 9 | Health + demo prep | `api/v1/health.py`, `scripts/demo.py`, `.env.example` update | Haiku 4.5 | ⏳ Pending |
 | 10 | CI/CD + release | `.github/workflows/ci.yml`, `docs/DEMO_SCRIPT.md`, `docs/HANDOVER.md`, git tag `v0.1.0-poc` | Haiku 4.5 | ⏳ Pending |
 

@@ -20,3 +20,6 @@ fastapi
 uvicorn[standard]
 websockets
 structlog
+pytest
+pytest-asyncio
+pytest-cov
