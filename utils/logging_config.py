@@ -49,6 +49,8 @@ def configure_logging(
         format="%(message)s",
         level=numeric_level,
     )
+    # basicConfig is a no-op if handlers are already set — force the level
+    logging.getLogger().setLevel(numeric_level)
 
     if not _HAS_STRUCTLOG:
         return  # fall back to stdlib without structlog installed
@@ -71,7 +73,9 @@ def configure_logging(
         processors=shared_processors + [renderer],
         wrapper_class=structlog.make_filtering_bound_logger(numeric_level),
         context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
+        # stdlib.LoggerFactory produces loggers with a .name attribute, which
+        # is required by the add_logger_name processor above.
+        logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
 
