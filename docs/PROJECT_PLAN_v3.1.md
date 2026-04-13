@@ -1,13 +1,13 @@
 ---
 title: Project Pantheon — Master Implementation Plan
-version: v3.0
-date: 2026-04-01
-status: Stage 1 (PoC) COMPLETE — tagged v0.1.0-poc
+version: v3.1
+date: 2026-04-13
+status: Stage 1 (PoC) COMPLETE — tagged v0.1.0-poc; CI green
 ---
 
 # Project Pantheon — Master Implementation Plan
 
-> **Current file: `PROJECT_PLAN_v3.0.md`** — For NotebookLM: always upload the highest-numbered file. Check `version:` on line 3 and the filename to confirm currency.
+> **Current file: `PROJECT_PLAN_v3.1.md`** — For NotebookLM: always upload the highest-numbered file. Check `version:` on line 3 and the filename to confirm currency.
 
 ---
 
@@ -243,3 +243,4 @@ project-pantheon/
 | v2.8 | 2026-04-01 | Sonnet 4.6 | Day 9 complete — api/v1/health.py, scripts/demo.py, .env.example |
 | v2.9 | 2026-04-01 | Sonnet 4.6 | Day 10 started — CI/CD + release in progress |
 | v3.0 | 2026-04-01 | Sonnet 4.6 | **Stage 1 PoC COMPLETE** — ci.yml, DEMO_SCRIPT.md, HANDOVER.md, git tag v0.1.0-poc; switched to filename-based versioning |
+| v3.1 | 2026-04-13 | Sonnet 4.6 | CI fix — structlog PrintLoggerFactory → stdlib.LoggerFactory; explicit setLevel() for root logger; all 86 tests green |
