@@ -55,3 +55,8 @@ Always develop on: `claude/remote-control-Q2YAQ`
 ## Repository
 
 `salafadidas/project-pantheon`
+
+## NotebookLM
+
+Upload account: **salafadidas@gmail.com**
+Always delete the old source before uploading the new versioned plan file.
