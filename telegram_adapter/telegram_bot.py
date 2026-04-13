@@ -7,12 +7,12 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import List, Any, Dict, Optional
+from typing import List, Any, Dict
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
-from core.exceptions import RateLimitError, RedisConnectionError
+from core.exceptions import RedisConnectionError
 from core.message_handler import MessageProcessor, TypingIndicator
 from core.utils import log_error
 from config.bot_config import BotConfig
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 class TelegramTypingIndicator(TypingIndicator):
     """Telegram-specific typing indicator implementation"""
-    
+
     @staticmethod
     async def send_periodically(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
         """Send typing action every 5 seconds until cancelled"""
@@ -63,10 +63,10 @@ class TelegramTypingIndicator(TypingIndicator):
 
 class TelegramMessageProcessor(MessageProcessor):
     """Telegram-specific message processor implementation"""
-    
+
     def __init__(self, redis, agent, config: BotConfig):
         super().__init__(
-            redis=redis, 
+            redis=redis,
             debounce_time=config.debounce_time,
             llm_calls_per_minute=config.llm_calls_per_minute
         )
@@ -76,7 +76,7 @@ class TelegramMessageProcessor(MessageProcessor):
         self.contexts: Dict[str, ContextTypes.DEFAULT_TYPE] = {}
         # Store typing indicator tasks
         self.typing_tasks: Dict[str, asyncio.Task] = {}
-    
+
     async def handle_message(self, user_id: str, message_text: str, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming messages
         
@@ -89,15 +89,15 @@ class TelegramMessageProcessor(MessageProcessor):
         # Store update and context for this user
         self.updates[user_id] = update
         self.contexts[user_id] = context
-        
+
         # Call the parent method with response and typing indicator callbacks
         await super().handle_message(
-            user_id, 
+            user_id,
             message_text,
             response_callback=self.send_response,
             typing_indicator_callback=self.manage_typing_indicator
         )
-    
+
     async def manage_typing_indicator(self, user_id: str, active: bool) -> None:
         """Manage typing indicator status
         
@@ -107,11 +107,11 @@ class TelegramMessageProcessor(MessageProcessor):
         """
         update = self.updates.get(user_id)
         context = self.contexts.get(user_id)
-        
+
         if not update or not context:
             logger.warning(f"Cannot manage typing indicator: missing update or context for user {user_id}")
             return
-        
+
         if active:
             # Start typing indicator if not already active
             if user_id not in self.typing_tasks or self.typing_tasks[user_id].done():
@@ -128,7 +128,7 @@ class TelegramMessageProcessor(MessageProcessor):
                     await asyncio.shield(task)
                 except asyncio.CancelledError:
                     pass
-    
+
     async def send_response(self, user_id: str, response: str) -> None:
         """Send response back to the user
         
@@ -138,7 +138,7 @@ class TelegramMessageProcessor(MessageProcessor):
         """
         update = self.updates.get(user_id)
         context = self.contexts.get(user_id)
-        
+
         if update and context:
             try:
                 # No need for typing indicator here as it's already managed by the process_messages_after_delay method
@@ -149,7 +149,7 @@ class TelegramMessageProcessor(MessageProcessor):
                 logger.error(f"Failed to send response to user {user_id}: {str(e)}")
         else:
             logger.error(f"Cannot send response: missing update or context for user {user_id}")
-    
+
     async def process_messages(self, user_id: str, messages: List[str]) -> Any:
         """Process the aggregated messages and generate a response
         
@@ -164,11 +164,11 @@ class TelegramMessageProcessor(MessageProcessor):
         try:
             # Get the agent manager from the application
             agent_manager = getattr(self, 'agent_manager', None)
-            
+
             if agent_manager:
                 # Get or create a user-specific agent from the manager
                 user_agent = await agent_manager.get_agent(user_id)
-                
+
                 # Use the user-specific agent
                 response = await user_agent.ainvoke(
                     {"messages": [{"role": "user", "content": combined}]},
@@ -181,7 +181,7 @@ class TelegramMessageProcessor(MessageProcessor):
                     {"messages": [{"role": "user", "content": combined}]},
                     config={"configurable": {"user_id": user_id, "thread_id": user_id}},
                 )
-            
+
             return response["messages"][-1].content
         except Exception as e:
             log_error(e, {"user_id": user_id, "operation": "agent_invoke"})
@@ -189,7 +189,7 @@ class TelegramMessageProcessor(MessageProcessor):
 
 class TelegramBot:
     """Telegram-specific bot implementation"""
-    
+
     def __init__(self, redis, config: BotConfig, agent, pool=None, store=None):
         self.redis = redis
         self.config = config
@@ -197,7 +197,7 @@ class TelegramBot:
         self.pool = pool  # Database connection pool
         self.store = store  # Vector store
         self.message_processor = TelegramMessageProcessor(redis, agent, config)
-    
+
     def create_application(self) -> Application:
         """Configure and return Telegram application"""
         if not self.config.telegram_token:
@@ -217,22 +217,22 @@ class TelegramBot:
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
         ])
         app.add_error_handler(self.handle_error)
-        
+
         # Setup lifecycle hooks
         app.post_init = self.setup
         app.post_shutdown = self.shutdown
-        
+
         return app
-    
+
     async def run(self) -> None:
         """Run the Telegram bot"""
         app = self.create_application()
         await app.initialize()
         await app.start()
         await app.updater.start_polling()
-        
+
         logger.info("Telegram bot started")
-        
+
         # Keep the application running
         try:
             await asyncio.Event().wait()
@@ -240,7 +240,7 @@ class TelegramBot:
             await app.stop()
             await app.shutdown()
             logger.info("Telegram bot stopped")
-        
+
     async def setup(self, application: Application) -> None:
         """Initialize application dependencies"""
         application.bot_data.update({
@@ -255,20 +255,20 @@ class TelegramBot:
             },
             "debounce_time": self.config.debounce_time
         })
-        
+
         logger.info(f"Telegram bot initialized with debounce_time={self.config.debounce_time}s, "
                     f"llm_calls_per_minute={self.config.llm_calls_per_minute}")
-    
+
     async def shutdown(self, application: Application) -> None:
         """Cleanup resources on shutdown"""
         logger.info("Telegram bot shutting down")
-        
+
         # Shutdown agent manager if it exists
         agent_manager = getattr(self.message_processor, 'agent_manager', None)
         if agent_manager:
             await agent_manager.shutdown()
             logger.info("Agent manager shut down")
-    
+
     async def handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command"""
         await update.message.reply_text('Hello! I am your LangGraph bot. How can I help you today?')
@@ -283,43 +283,43 @@ class TelegramBot:
             'Use /reset to clear your data and start fresh.'
         )
         await update.message.reply_text(help_text)
-    
+
     async def handle_reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /reset command to clear user data"""
         user_id = str(update.effective_user.id)
-        
+
         # Show typing indicator while processing
         await context.bot.send_chat_action(
             chat_id=update.effective_chat.id,
             action="typing"
         )
-        
+
         # Get required components
         redis = self.redis
         pool = self.pool or context.bot_data.get("pool")
         store = self.store or context.bot_data.get("store")
-        
+
         if not redis or not pool:
             await update.message.reply_text("Sorry, I can't reset your data right now. Please try again later.")
             return
-        
+
         try:
             # Clear user data
             await clear_user_data(user_id, redis, pool, store)
-            
+
             # Also remove the agent from the agent manager if it exists
             agent_manager = getattr(self.message_processor, 'agent_manager', None)
             if agent_manager:
                 await agent_manager.remove_agent(user_id)
                 logger.info(f"Removed agent for user {user_id} from agent manager")
-            
+
             # Confirm to user
             await update.message.reply_text("Your data has been cleared. We can start fresh! 🔄")
             logger.info(f"User {user_id} reset their data")
         except Exception as e:
             log_error(e, {"user_id": user_id, "operation": "reset_data"})
             await update.message.reply_text("Sorry, I encountered an error while trying to reset your data. Please try again later.")
-        
+
     # ------------------------------------------------------------------ Pantheon commands
 
     async def handle_submit(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -502,19 +502,19 @@ class TelegramBot:
     async def handle_error(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Log errors"""
         logger.error(f"Update {update} caused error {context.error}")
-        
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming messages"""
         user_id = str(update.effective_user.id)
         message_text = update.message.text
-        
+
         if not self.redis:
             logger.error("Redis connection not available")
             await update.message.reply_text(
                 "I'm having trouble connecting to my memory. Please try again in a moment."
             )
             return
-        
+
         try:
             # Pass update and context to the message processor
             await self.message_processor.handle_message(user_id, message_text, update, context)
