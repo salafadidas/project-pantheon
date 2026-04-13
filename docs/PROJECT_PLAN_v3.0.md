@@ -7,7 +7,9 @@ status: Stage 1 (PoC) COMPLETE — tagged v0.1.0-poc
 
 # Project Pantheon — Master Implementation Plan
 
-> **v3.0 | 2026-04-01** — Stage 1 PoC complete. Tagged `v0.1.0-poc`. — Single source of truth. For NotebookLM: always upload this file; check `version:` on line 3 to confirm currency.
+> **Current file: `PROJECT_PLAN_v3.0.md`** — For NotebookLM: always upload the highest-numbered file. Check `version:` on line 3 and the filename to confirm currency.
+
+---
 
 ## 1. Project Overview
 
@@ -136,7 +138,7 @@ Project Pantheon is a cross-engine multi-agent collaboration system where multip
 
 ---
 
-## 5. Repository Map (Actual — 2026-04-01)
+## 5. Repository Map (Actual — v3.0)
 
 ```
 project-pantheon/
@@ -153,55 +155,65 @@ project-pantheon/
 ├── llm/
 │   ├── provider.py                  # LiteLLM unified multi-model interface
 │   └── cost_tracker.py             # Token usage + cost tracking per session
-├── api/
-│   └── v1/
-│       ├── sessions.py              # REST: POST/GET/DELETE /api/v1/sessions
-│       └── websocket.py            # WS: /api/v1/sessions/{id}/stream
+├── api/v1/
+│   ├── sessions.py                  # REST: POST/GET/DELETE /api/v1/sessions
+│   ├── websocket.py                 # WS: /api/v1/sessions/{id}/stream
+│   └── health.py                    # GET /health, GET /health/ready
 ├── telegram_adapter/
-│   └── telegram_bot.py             # /submit /status /report /cancel + phase notifications
-├── agent/                           # Original single-agent layer (from fork)
-├── config/                          # BotConfig, AgentConfig, BaseConfig
-├── core/                            # MessageProcessor, redis_utils, exceptions, utils
-├── db/                              # PostgreSQL + pgvector utilities
-├── frontend/                        # Next.js skeleton (original fork components only)
-├── docs/
-│   ├── PROJECT_PLAN.md             # ← This file (master plan)
-│   └── ARCHITECTURE.md             # System diagrams, state schema, LLM matrix
-├── docker-compose.yml               # Production: bot + postgres + redis + frontend
-├── docker-compose.dev.yml           # Development: same + hot-reload + pgAdmin
-├── Dockerfile
-└── .env.example                     # All required environment variables
-```
-
-**Planned additions (Days 6–10):**
-```
-├── frontend/components/
-│   ├── PhaseTimeline.tsx            # 5-phase progress visualization
-│   ├── DiscussionThread.tsx         # Agent debate display
-│   ├── CostMonitor.tsx              # Real-time cost tracking
-│   └── TaskSubmit.tsx               # Task submission form
+│   └── telegram_bot.py             # /submit /status /report /cancel
 ├── utils/
-│   ├── timeout.py                   # Async timeout wrapper
+│   ├── timeout.py                   # Async timeout wrapper + @timeout decorator
 │   ├── logging_config.py           # structlog JSON logging
-│   └── retry.py                     # Exponential backoff retry
-├── api/v1/health.py                 # GET /health endpoint
-├── scripts/demo.py                  # Standalone end-to-end demo
-├── tests/                           # pytest suite (80%+ coverage target)
-├── .github/workflows/ci.yml         # CI pipeline
-└── docs/
-    ├── DEMO_SCRIPT.md               # 3 demo scenarios
-    └── HANDOVER.md                  # Production handover guide
+│   └── retry.py                     # Exponential backoff @retry + retry_call()
+├── frontend/                        # Next.js (Pages Router)
+│   ├── pages/index.tsx              # Home: task submission
+│   ├── pages/session/[id].tsx       # Session view
+│   ├── components/                  # PhaseTimeline, DiscussionThread, CostMonitor, TaskSubmit
+│   └── hooks/useSession.ts          # WebSocket state hook
+├── tests/                           # pytest suite (8 modules, 60+ tests)
+├── scripts/demo.py                  # Standalone CLI demo
+├── .github/workflows/ci.yml         # CI: pytest + ruff + Next.js build
+├── docs/
+│   ├── PROJECT_PLAN_v3.0.md        # ← This file (master plan, current version)
+│   ├── ARCHITECTURE.md             # System diagrams, state schema, LLM matrix
+│   ├── DEMO_SCRIPT.md              # 3 demo scenarios with expected output
+│   └── HANDOVER.md                 # Production handover guide
+├── docker-compose.yml
+├── docker-compose.dev.yml
+├── Dockerfile
+└── .env.example
 ```
 
 ---
 
 ## 6. Versioning Policy
 
-- Version lives in the YAML front-matter block at the top of this file — **never in the filename**
-- `PROJECT_PLAN.md` is the permanent filename
-- **Patch bump** (v2.0 → v2.1): a day completes, status cells updated
-- **Minor bump** (v2.1 → v2.2): scope item added or removed within a stage
-- **Major bump** (v2.x → v3.0): a stage completes and the next stage's sprint plan is written in full
+### Filename versioning — rules
+
+- **The filename IS the version**: `PROJECT_PLAN_vX.Y.md`
+- **Only one versioned file exists at a time** — when bumping, rename the old file to the new version (git mv); do not accumulate stale copies
+- The highest-numbered file in `docs/` is always the current plan
+- Upload the current versioned file to NotebookLM; delete old sources before uploading
+
+### When to bump
+
+| Bump type | Example | Trigger |
+|-----------|---------|---------|
+| Patch | v3.0 → v3.1 | A day/task completes; status cells updated |
+| Minor | v3.1 → v3.2 | Scope item added or removed within a stage |
+| Major | v3.x → v4.0 | A stage completes and the next stage's sprint plan is written |
+
+### Bump procedure (mandatory before any implementation code)
+
+```
+1. git mv docs/PROJECT_PLAN_vX.Y.md docs/PROJECT_PLAN_vX.(Y+1).md
+2. Update version: and date: in YAML front-matter
+3. Update the title line: "Current file: PROJECT_PLAN_vX.(Y+1).md"
+4. Update the relevant status rows / day tables
+5. Add an entry to the Version History section below
+6. git add + git commit "chore: bump plan to vX.(Y+1) — <reason>"
+7. Only then write implementation code
+```
 
 ---
 
@@ -213,3 +225,21 @@ project-pantheon/
 | Authentication strategy for Stage 2 API | TBD |
 | Stage 3 Eigent integration — proceed or skip | Decision gate after Stage 2 |
 | Frontend framework for Stage 2 (keep Next.js or migrate) | TBD |
+
+---
+
+## 8. Version History
+
+| Version | Date | Author | Summary |
+|---------|------|--------|---------|
+| v2.0 | 2026-03-26 | Sonnet 4.6 | Initial master plan rewrite — replaced fragmented v1.5.md files; added YAML front-matter; documented all 3 delivery stages |
+| v2.1 | 2026-04-01 | Sonnet 4.6 | Day 6 started — React frontend in progress |
+| v2.2 | 2026-04-01 | Sonnet 4.6 | Day 6 complete — PhaseTimeline, DiscussionThread, CostMonitor, TaskSubmit, useSession, session page, index page |
+| v2.3 | 2026-04-01 | Sonnet 4.6 | Day 7 started — utility layer in progress |
+| v2.4 | 2026-04-01 | Sonnet 4.6 | Day 7 complete — utils/timeout.py, utils/logging_config.py (structlog), utils/retry.py |
+| v2.5 | 2026-04-01 | Sonnet 4.6 | Day 8 started — test suite in progress |
+| v2.6 | 2026-04-01 | Sonnet 4.6 | Day 8 complete — pytest suite (8 modules, 60+ tests) |
+| v2.7 | 2026-04-01 | Sonnet 4.6 | Day 9 started — health + demo in progress |
+| v2.8 | 2026-04-01 | Sonnet 4.6 | Day 9 complete — api/v1/health.py, scripts/demo.py, .env.example |
+| v2.9 | 2026-04-01 | Sonnet 4.6 | Day 10 started — CI/CD + release in progress |
+| v3.0 | 2026-04-01 | Sonnet 4.6 | **Stage 1 PoC COMPLETE** — ci.yml, DEMO_SCRIPT.md, HANDOVER.md, git tag v0.1.0-poc; switched to filename-based versioning |
