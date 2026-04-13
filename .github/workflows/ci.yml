@@ -71,7 +71,7 @@ jobs:
         run: pip install ruff
 
       - name: Ruff check
-        run: ruff check . --select E,F,W --ignore E501
+        run: ruff check .
 
   frontend:
     name: frontend build check

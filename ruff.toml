@@ -1,0 +1,20 @@
+# Ruff configuration — only lint Pantheon code, not the original fork directories
+exclude = [
+    "agent/",
+    "config/",
+    "core/",
+    "db/",
+    "telegram_adapter/",
+    ".git",
+    ".github",
+    "frontend/",
+    "node_modules/",
+    "__pycache__",
+]
+
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",   # line too long — handled by formatter
+    "E402",   # module-level import not at top — needed in main.py and demo.py
+]

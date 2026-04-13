@@ -1,8 +1,6 @@
 """Tests for utils/retry.py"""
 
-import asyncio
 import pytest
-from unittest.mock import AsyncMock, patch
 
 from utils.retry import retry, retry_call, RetryError
 

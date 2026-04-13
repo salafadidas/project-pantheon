@@ -2,6 +2,7 @@ python-telegram-bot
 langgraph
 langmem
 langchain
+langchain-core
 langchain_community
 asyncpg
 psycopg2-binary

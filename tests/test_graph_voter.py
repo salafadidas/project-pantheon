@@ -1,6 +1,5 @@
 """Tests for graph/nodes/voter.py — pure functions and mocked node."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
 from graph.nodes.voter import (

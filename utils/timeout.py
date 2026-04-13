@@ -9,7 +9,7 @@ Usage::
 
 import asyncio
 import functools
-from typing import Any, Awaitable, TypeVar
+from typing import Awaitable, TypeVar
 
 T = TypeVar("T")
 

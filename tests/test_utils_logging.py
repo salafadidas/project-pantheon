@@ -1,7 +1,6 @@
 """Tests for utils/logging_config.py"""
 
 import logging
-import pytest
 
 from utils.logging_config import configure_logging, get_logger, bind_context, clear_context
 

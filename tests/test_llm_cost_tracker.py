@@ -1,6 +1,5 @@
 """Tests for llm/cost_tracker.py"""
 
-import asyncio
 import pytest
 from unittest.mock import patch
 

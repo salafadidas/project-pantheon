@@ -1,7 +1,6 @@
 """Tests for graph node functions — pm_router and researcher (mocked LLM)."""
 
 import json
-import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 
 from tests.conftest import make_state, MockChatLLM

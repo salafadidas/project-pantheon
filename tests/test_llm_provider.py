@@ -70,7 +70,7 @@ def test_provider_default_model_override():
     # get_chat_model with no args should use the default
     with patch("llm.provider.ChatLiteLLM") as mock_cls:
         mock_cls.return_value = MagicMock()
-        llm = provider.get_chat_model()
+        provider.get_chat_model()
     assert mock_cls.called
     call_kwargs = mock_cls.call_args.kwargs
     assert "claude" in call_kwargs["model"]
