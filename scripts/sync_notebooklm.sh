@@ -52,23 +52,43 @@ fi
 
 PLAN_VERSION=$(basename "$CURRENT_PLAN")
 
-# 3. 比對上次已上傳版本
+# 3. 比對上次已上傳版本（即 NotebookLM 上的現有版本）
 LAST_UPLOADED=$(cat "$STATE_FILE" 2>/dev/null || echo "")
+OLD_LABEL="${LAST_UPLOADED:-（無）}"
 
 if [ "$PLAN_VERSION" = "$LAST_UPLOADED" ]; then
   log "Plan unchanged ($PLAN_VERSION), skipping upload."
   exit 0
 fi
 
-log "New plan detected: $PLAN_VERSION (previous: ${LAST_UPLOADED:-none})"
-log "Starting NotebookLM upload..."
+# ── 版本比較報告 ──────────────────────────────────────────────────────────────
+OLD_VER=$(echo "$OLD_LABEL"   | grep -oE 'v[0-9]+\.[0-9]+' || echo "$OLD_LABEL")
+NEW_VER=$(echo "$PLAN_VERSION" | grep -oE 'v[0-9]+\.[0-9]+' || echo "$PLAN_VERSION")
+
+log "版本變更偵測："
+log "  NotebookLM 現有版本：$OLD_VER  ($OLD_LABEL)"
+log "  本地最新版本　　　：$NEW_VER  ($PLAN_VERSION)"
+log "  → 開始上傳..."
 
 # 4. 上傳（headless 模式）
-if node "$PROJECT_DIR/scripts/upload_notebooklm.mjs" --headless >> "$LOG_FILE" 2>&1; then
+UPLOAD_LOG=$(node "$PROJECT_DIR/scripts/upload_notebooklm.mjs" --headless 2>&1)
+UPLOAD_EXIT=$?
+echo "$UPLOAD_LOG" >> "$LOG_FILE"
+
+if [ $UPLOAD_EXIT -eq 0 ]; then
   echo "$PLAN_VERSION" > "$STATE_FILE"
-  log "Upload successful: $PLAN_VERSION"
+
+  # ── 上傳完成報告 ────────────────────────────────────────────────────────────
+  REPORT="NotebookLM 已更新：$OLD_VER → $NEW_VER"
+  log "✅ $REPORT"
+  log "   上傳檔案：$PLAN_VERSION"
+  log "   帳號：salafadidas@gmail.com"
+
+  # macOS 桌面通知
+  osascript -e "display notification \"$OLD_VER → $NEW_VER\" with title \"Project Pantheon — NotebookLM 已更新\" sound name \"Glass\"" 2>/dev/null || true
 else
-  log "Upload FAILED (exit $?). Will retry next cycle."
+  log "❌ 上傳失敗（exit $UPLOAD_EXIT）。下個週期將重試。"
+  osascript -e "display notification \"上傳失敗，請查看 ~/.pantheon-sync.log\" with title \"Project Pantheon — NotebookLM 同步錯誤\" sound name \"Basso\"" 2>/dev/null || true
 fi
 
 log "--- sync end ---"
