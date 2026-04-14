@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "node",
+      "args": [
+        "/opt/node22/lib/node_modules/playwright/lib/mcp/program.js",
+        "--headless",
+        "--no-sandbox",
+        "--user-data-dir",
+        "/root/.claude/playwright-profile"
+      ]
+    }
+  }
+}
