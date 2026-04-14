@@ -9,6 +9,10 @@
         "--user-data-dir",
         "/root/.claude/playwright-profile"
       ]
+    },
+    "openmemory": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp"
     }
   }
 }
