@@ -80,25 +80,37 @@ async function main() {
   try {
     // ── 1. 前往 NotebookLM ──────────────────────────────────────────────────
     console.log('\n🌐 前往 NotebookLM...');
-    await page.goto(NOTEBOOKLM, { waitUntil: 'networkidle' });
+    await page.goto(NOTEBOOKLM, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(2000);
 
-    // 若未登入，等待使用者手動登入（最多 3 分鐘）
-    const loginNeeded = await page.locator('text=Sign in').isVisible().catch(() => false);
-    if (loginNeeded) {
-      console.log('⏳ 請在瀏覽器中完成 Google 登入（等待最多 3 分鐘）...');
-      await page.waitForURL(url => url.includes('notebooklm.google.com') && !url.includes('accounts.google'), {
-        timeout: 180000,
-      });
+    // 用 URL 判斷是否需要登入（比文字偵測更可靠）
+    const checkLoginNeeded = () => {
+      const u = page.url();
+      return !u.includes('notebooklm.google.com') || u.includes('accounts.google') || u.includes('signin');
+    };
+    if (checkLoginNeeded()) {
+      console.log('⏳ 請在開啟的瀏覽器視窗中登入 salafadidas@gmail.com（等待最多 3 分鐘）...');
+      await page.waitForURL(
+        url => url.toString().includes('notebooklm.google.com') && !url.toString().includes('accounts.google'),
+        { timeout: 180000 }
+      );
       await page.waitForLoadState('networkidle');
+      console.log('  ✅ 登入完成');
     }
 
     // ── 2. 找到目標 Notebook ────────────────────────────────────────────────
     console.log(`\n🔍 尋找 notebook：${NOTEBOOK_NAME}`);
     await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
 
-    // 點擊目標 notebook
-    const notebookCard = page.locator(`text="${NOTEBOOK_NAME}"`).first();
-    await notebookCard.waitFor({ timeout: 15000 });
+    // 先嘗試精確比對，若失敗改用部分比對
+    let notebookCard = page.getByText(NOTEBOOK_NAME, { exact: true }).first();
+    const exactVisible = await notebookCard.isVisible().catch(() => false);
+    if (!exactVisible) {
+      console.log('  → 精確比對未找到，改用部分比對...');
+      notebookCard = page.getByText('Project Pantheon', { exact: false }).first();
+    }
+    await notebookCard.waitFor({ timeout: 20000 });
     await notebookCard.click();
     await page.waitForLoadState('networkidle');
     console.log('  ✅ 已開啟 notebook');
