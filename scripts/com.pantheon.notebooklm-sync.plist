@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.pantheon.notebooklm-sync.plist
+  macOS launchd agent — 每 5 分鐘自動 pull + 上傳新版 plan 到 NotebookLM
+
+  一次性安裝（在 Mac Terminal 執行以下兩行）：
+    cp ~/project-pantheon/scripts/com.pantheon.notebooklm-sync.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.pantheon.notebooklm-sync.plist
+
+  查看執行日誌：
+    tail -f ~/.pantheon-sync.log
+
+  停用：
+    launchctl unload ~/Library/LaunchAgents/com.pantheon.notebooklm-sync.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.pantheon.notebooklm-sync</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>sync_notebooklm.sh</string>
+  </array>
+
+  <!-- 每 300 秒（5 分鐘）執行一次 -->
+  <key>StartInterval</key>
+  <integer>300</integer>
+
+  <!-- 載入後立即執行一次 -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- 從腳本所在目錄執行，讓相對路徑正確解析 -->
+  <key>WorkingDirectory</key>
+  <string>PLACEHOLDER_HOME/project-pantheon/scripts</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>PLACEHOLDER_HOME</string>
+  </dict>
+</dict>
+</plist>

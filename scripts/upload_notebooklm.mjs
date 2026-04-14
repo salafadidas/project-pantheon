@@ -61,16 +61,24 @@ async function main() {
   const planPath = findLatestPlan();
   const planName = planPath.split('/').pop();
 
-  const isFirstRun = !existsSync(PROFILE_DIR);
-  if (isFirstRun) {
+  const profileExists = existsSync(PROFILE_DIR);
+  if (!profileExists) {
     mkdirSync(PROFILE_DIR, { recursive: true });
-    console.log('\n🔑 首次執行：請在開啟的瀏覽器中登入 salafadidas@gmail.com');
-    console.log('   登入完成後，腳本會自動繼續。\n');
+  }
+
+  // --headless flag：用於自動排程（launchd）；首次執行必須有頭瀏覽器
+  const wantHeadless = process.argv.includes('--headless') || process.env.PANTHEON_HEADLESS === '1';
+  const headless = wantHeadless && profileExists;
+  if (wantHeadless && !profileExists) {
+    console.log('⚠️  尚無已儲存的 Google session，改用有頭瀏覽器進行首次登入。');
+  }
+  if (!headless) {
+    console.log('\n🔑 請在開啟的瀏覽器中登入 salafadidas@gmail.com（已登入則會自動跳過）');
   }
 
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
-    headless: false,          // 保持有頭，方便觀察 & 首次登入
-    slowMo: 300,
+    headless,
+    slowMo: headless ? 0 : 300,
     viewport: { width: 1280, height: 800 },
     args: ['--no-sandbox'],
   });
