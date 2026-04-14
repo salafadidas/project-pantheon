@@ -1,13 +1,13 @@
 ---
 title: Project Pantheon — Master Implementation Plan
-version: v3.2
-date: 2026-04-13
+version: v3.3
+date: 2026-04-14
 status: Stage 1 (PoC) COMPLETE — tagged v0.1.0-poc; CI green
 ---
 
 # Project Pantheon — Master Implementation Plan
 
-> **Current file: `PROJECT_PLAN_v3.2.md`** — For NotebookLM: always upload the highest-numbered file. Check `version:` on line 3 and the filename to confirm currency.
+> **Current file: `PROJECT_PLAN_v3.3.md`** — For NotebookLM: always upload the highest-numbered file. Check `version:` on line 3 and the filename to confirm currency.
 
 ---
 
@@ -245,3 +245,4 @@ project-pantheon/
 | v3.0 | 2026-04-01 | Sonnet 4.6 | **Stage 1 PoC COMPLETE** — ci.yml, DEMO_SCRIPT.md, HANDOVER.md, git tag v0.1.0-poc; switched to filename-based versioning |
 | v3.1 | 2026-04-13 | Sonnet 4.6 | CI fix — structlog PrintLoggerFactory → stdlib.LoggerFactory; explicit setLevel() for root logger; all 86 tests green |
 | v3.2 | 2026-04-13 | Sonnet 4.6 | NotebookLM account migrated: susynoid09@gmail.com → salafadidas@gmail.com; account recorded in plan §6 and CLAUDE.md |
+| v3.3 | 2026-04-14 | Sonnet 4.6 | CLAUDE.md: added Error Prevention standards (capability investigation protocol, forbidden anti-patterns) and CLAUDE.md Update Policy |
