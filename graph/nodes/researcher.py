@@ -10,16 +10,16 @@ pipeline.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-from datetime import datetime, timezone
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from graph.state import PantheonState
 from llm.provider import PHASE_MODEL_ROLES, LLMProvider
+from utils.logging_config import get_logger
+from utils.timeout import with_timeout, TimeoutError as PantheonTimeoutError
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 PHASE_TIMEOUT_SECONDS: int = int(os.getenv("PHASE_TIMEOUT_SECONDS", "60"))
 
@@ -89,17 +89,18 @@ async def _research_with_timeout(
         placeholder so downstream nodes always have an entry for every model.
     """
     try:
-        result = await asyncio.wait_for(
+        result = await with_timeout(
             _get_research(provider=provider, model_key=model_key, task=task),
-            timeout=float(timeout),
+            seconds=float(timeout),
+            label=f"researcher:{model_key}",
         )
-        logger.info("Researcher %s completed (%d chars)", model_key, len(result))
+        logger.info("researcher_done", model=model_key, chars=len(result))
         return model_key, result
-    except asyncio.TimeoutError:
-        logger.warning("Researcher %s timed out after %ds", model_key, timeout)
+    except PantheonTimeoutError:
+        logger.warning("researcher_timeout", model=model_key, timeout_s=timeout)
         return model_key, f"[ERROR: {model_key} timed out after {timeout}s]"
     except Exception as exc:
-        logger.warning("Researcher %s failed: %s", model_key, exc)
+        logger.warning("researcher_error", model=model_key, error=str(exc))
         return model_key, f"[ERROR: {model_key} failed — {exc}]"
 
 

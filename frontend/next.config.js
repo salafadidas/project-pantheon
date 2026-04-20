@@ -4,10 +4,11 @@ const nextConfig = {
   swcMinify: true,
   output: 'standalone', // Optimized for Docker
   async rewrites() {
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
     return [
       {
-        source: '/api/:path*',
-        destination: '/api/:path*',
+        source: '/api/v1/:path*',
+        destination: `${backendUrl}/api/v1/:path*`,
       },
     ];
   },

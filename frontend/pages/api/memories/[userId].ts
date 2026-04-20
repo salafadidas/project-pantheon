@@ -30,7 +30,7 @@ export default async function handler(
     const formattedMemories = Array.isArray(result) 
       ? result.map(memory => ({
           key: memory?.key || 'unknown',
-          content: memory?.value?.content || 'No content',
+          content: (memory?.value as { content?: string })?.content || 'No content',
           createdAt: memory?.created_at || new Date(),
           updatedAt: memory?.updated_at || new Date(),
         }))

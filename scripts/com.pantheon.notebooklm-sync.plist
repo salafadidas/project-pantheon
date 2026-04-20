@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.pantheon.notebooklm-sync.plist
+  事件驅動：僅在 flag 檔（~/.pantheon-new-commit-flag）變動時觸發。
+  flag 由 com.pantheon.git-fetch agent 在偵測到新 commit 時寫入。
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.pantheon.notebooklm-sync</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>sync_notebooklm.sh</string>
+  </array>
+
+  <!-- 監聽 flag 檔變動，有新 commit 才觸發，不用固定間隔 -->
+  <key>WatchPaths</key>
+  <array>
+    <string>PLACEHOLDER_HOME/.pantheon-new-commit-flag</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>PLACEHOLDER_HOME/project-pantheon/scripts</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>PLACEHOLDER_HOME</string>
+  </dict>
+</dict>
+</plist>
