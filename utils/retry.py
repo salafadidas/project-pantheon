@@ -13,6 +13,8 @@ Usage::
     result = await retry_call(call_llm, prompt="hello", max_attempts=3)
 """
 
+from __future__ import annotations
+
 import asyncio
 import functools
 import random

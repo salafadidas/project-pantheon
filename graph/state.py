@@ -33,6 +33,10 @@ class PantheonState(TypedDict):
     pm_model: str
     """Model key (from LLMProvider) acting as PM/router for this session."""
 
+    selected_models: List[str]
+    """Model keys chosen by the user for this session.  When non-empty, these
+    override the default PHASE_MODEL_ROLES for research, debate, and voting."""
+
     # --------------------------------------------------------- phase outputs
     research_results: Dict[str, str]
     """Phase 2 output: mapping of model_name -> research text."""

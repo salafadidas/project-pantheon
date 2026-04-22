@@ -56,7 +56,7 @@ async def voter_node(state: PantheonState) -> PantheonState:
         Updated PantheonState with votes, consensus, and phase = "synthesis".
     """
     provider = LLMProvider()
-    voter_models = _resolve_voter_models(provider)
+    voter_models = _resolve_voter_models(provider, state)
     debate_transcript = _format_debate(state.get("debate_history", []))
 
     tasks = [
@@ -180,24 +180,25 @@ def _calculate_consensus(votes: dict[str, str]) -> str | None:
     return valid_votes[0]
 
 
-def _resolve_voter_models(provider: LLMProvider) -> list[str]:
+def _resolve_voter_models(provider: LLMProvider, state: PantheonState) -> list[str]:
     """Return the list of models that should cast votes.
 
-    Uses debater_* roles (same participants as the debate), falling back to
-    all available models if none are configured.
+    Priority:
+    1. User-selected models (state["selected_models"]) when non-empty.
+    2. Models mapped to debater_* roles in PHASE_MODEL_ROLES (same participants
+       as the debate).
+    3. All provider-available models as a last resort.
     """
+    user_selected: list[str] = state.get("selected_models") or []
+    if user_selected:
+        return list(dict.fromkeys(user_selected))
+
     debater_keys = [
         model_key
         for role, model_key in PHASE_MODEL_ROLES.items()
         if role.startswith("debater_")
     ]
     if debater_keys:
-        seen: set[str] = set()
-        unique: list[str] = []
-        for k in debater_keys:
-            if k not in seen:
-                seen.add(k)
-                unique.append(k)
-        return unique
+        return list(dict.fromkeys(debater_keys))
 
     return provider.available_models

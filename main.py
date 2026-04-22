@@ -26,6 +26,7 @@ from core.exceptions import ConfigurationError
 from api.v1.sessions import router as sessions_router
 from api.v1.websocket import router as ws_router
 from api.v1.health import router as health_router
+from api.v1.models import router as models_router
 
 logger = get_logger(__name__)
 
@@ -37,6 +38,7 @@ app = FastAPI(title="Project Pantheon", version="1.0.0")
 app.include_router(health_router)
 app.include_router(sessions_router)
 app.include_router(ws_router)
+app.include_router(models_router)
 
 
 # --------------------------------------------------------------------------- #

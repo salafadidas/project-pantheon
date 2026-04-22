@@ -15,6 +15,8 @@ Usage::
     log.info("session_started", session_id=sid, task=task)
 """
 
+from __future__ import annotations
+
 import logging
 import sys
 from typing import Any

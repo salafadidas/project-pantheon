@@ -9,7 +9,7 @@ Usage::
 
 import asyncio
 import functools
-from typing import Awaitable, TypeVar
+from typing import Awaitable, Optional, TypeVar
 
 T = TypeVar("T")
 
@@ -48,7 +48,7 @@ async def with_timeout(
         raise TimeoutError(label=label, seconds=seconds)
 
 
-def timeout(seconds: float, label: str | None = None):
+def timeout(seconds: float, label: Optional[str] = None):
     """Decorator that applies :func:`with_timeout` to an async function.
 
     Args:

@@ -16,6 +16,7 @@ def make_state(**overrides) -> dict:
         "session_id": "test-session-001",
         "user_id": "test-user",
         "pm_model": "gpt-4o-mini",
+        "selected_models": [],
         "research_results": {},
         "debate_history": [],
         "debate_round": 0,

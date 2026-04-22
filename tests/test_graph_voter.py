@@ -112,7 +112,8 @@ def test_consensus_tie_returns_a_winner():
 def test_resolve_voter_models_returns_list():
     from llm.provider import LLMProvider
     provider = LLMProvider()
-    models = _resolve_voter_models(provider)
+    state = make_state(selected_models=[])
+    models = _resolve_voter_models(provider, state)
     assert isinstance(models, list)
     assert len(models) > 0
 
@@ -120,7 +121,8 @@ def test_resolve_voter_models_returns_list():
 def test_resolve_voter_models_no_duplicates():
     from llm.provider import LLMProvider
     provider = LLMProvider()
-    models = _resolve_voter_models(provider)
+    state = make_state(selected_models=[])
+    models = _resolve_voter_models(provider, state)
     assert len(models) == len(set(models))
 
 

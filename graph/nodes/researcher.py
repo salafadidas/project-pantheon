@@ -47,7 +47,7 @@ async def researcher_node(state: PantheonState) -> PantheonState:
         phase = "debate".
     """
     provider = LLMProvider()
-    researcher_models = _resolve_researcher_models(provider)
+    researcher_models = _resolve_researcher_models(provider, state)
 
     tasks = [
         _research_with_timeout(
@@ -127,20 +127,24 @@ async def _get_research(
     return content.strip()
 
 
-def _resolve_researcher_models(provider: LLMProvider) -> list[str]:
-    """Return deduplicated list of model keys for the research phase."""
+def _resolve_researcher_models(provider: LLMProvider, state: PantheonState) -> list[str]:
+    """Return deduplicated list of model keys for the research phase.
+
+    Priority:
+    1. User-selected models (state["selected_models"]) when non-empty.
+    2. Models mapped to researcher_* roles in PHASE_MODEL_ROLES.
+    3. All provider-available models as a last resort.
+    """
+    user_selected: list[str] = state.get("selected_models") or []
+    if user_selected:
+        return list(dict.fromkeys(user_selected))  # deduplicate, preserve order
+
     researcher_keys = [
         model_key
         for role, model_key in PHASE_MODEL_ROLES.items()
         if role.startswith("researcher_")
     ]
     if researcher_keys:
-        seen: set[str] = set()
-        unique: list[str] = []
-        for k in researcher_keys:
-            if k not in seen:
-                seen.add(k)
-                unique.append(k)
-        return unique
+        return list(dict.fromkeys(researcher_keys))
 
     return provider.available_models

@@ -17,7 +17,7 @@ from typing import List
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from graph.state import PantheonState
-from llm.provider import LLMProvider
+from llm.provider import LLMProvider, PHASE_MODEL_ROLES
 
 logger = logging.getLogger(__name__)
 
@@ -125,11 +125,14 @@ async def _get_model_statement(
 def _resolve_debate_models(state: PantheonState, provider: LLMProvider) -> list[str]:
     """Return the list of model keys to use for debating.
 
-    Preference order:
-    1. Models listed under debater_* roles in PHASE_MODEL_ROLES
-    2. Fallback to all available models if none are role-mapped
+    Priority:
+    1. User-selected models (state["selected_models"]) when non-empty.
+    2. Models mapped to debater_* roles in PHASE_MODEL_ROLES.
+    3. All provider-available models as a last resort.
     """
-    from llm.provider import PHASE_MODEL_ROLES
+    user_selected: list[str] = state.get("selected_models") or []
+    if user_selected:
+        return list(dict.fromkeys(user_selected))
 
     debater_keys = [
         model_key
@@ -137,13 +140,6 @@ def _resolve_debate_models(state: PantheonState, provider: LLMProvider) -> list[
         if role.startswith("debater_")
     ]
     if debater_keys:
-        # Deduplicate while preserving order
-        seen: set[str] = set()
-        unique: list[str] = []
-        for k in debater_keys:
-            if k not in seen:
-                seen.add(k)
-                unique.append(k)
-        return unique
+        return list(dict.fromkeys(debater_keys))
 
     return provider.available_models

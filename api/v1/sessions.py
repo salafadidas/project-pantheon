@@ -55,6 +55,7 @@ class CreateSessionResponse(BaseModel):
 class StartSessionRequest(BaseModel):
     task: str
     user_id: str = "api_user"
+    selected_models: Optional[list[str]] = None
 
 
 class SessionStatus(BaseModel):
@@ -115,7 +116,9 @@ async def start_session(
         mapping={"task": body.task, "user_id": body.user_id, "status": "running", "phase": "routing"},
     )
 
-    task = asyncio.create_task(_run_session(session_id, body.task, body.user_id, redis))
+    task = asyncio.create_task(
+        _run_session(session_id, body.task, body.user_id, redis, body.selected_models or [])
+    )
     _session_tasks[session_id] = task
     return {"session_id": session_id, "status": "started"}
 
@@ -180,7 +183,9 @@ async def cancel_session(session_id: str, request: Request) -> None:
 # Graph runner                                                                 #
 # --------------------------------------------------------------------------- #
 
-async def _run_session(session_id: str, task: str, user_id: str, redis: Redis) -> None:
+async def _run_session(
+    session_id: str, task: str, user_id: str, redis: Redis, selected_models: list[str]
+) -> None:
     """Execute the Pantheon graph and stream events to Redis pub/sub."""
     channel = _events_channel(session_id)
     key = _session_key(session_id)
@@ -191,6 +196,7 @@ async def _run_session(session_id: str, task: str, user_id: str, redis: Redis) -
         "user_id": user_id,
         "phase": "routing",
         "pm_model": "claude-sonnet",
+        "selected_models": selected_models,
         "debate_round": 0,
         "research_results": {},
         "debate_history": [],

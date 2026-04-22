@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/router';
+import ModelSelector from './ModelSelector';
 
 // ------------------------------------------------------------------ types ---
 
@@ -25,6 +26,7 @@ const EXAMPLE_TASKS = [
 export default function TaskSubmit({ onSessionCreated }: TaskSubmitProps) {
   const router = useRouter();
   const [task, setTask] = useState('');
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,27 +34,43 @@ export default function TaskSubmit({ onSessionCreated }: TaskSubmitProps) {
     e.preventDefault();
     const trimmed = task.trim();
     if (!trimmed) return;
+    if (selectedModels.length === 0) {
+      setError('Please select at least one AI model.');
+      return;
+    }
 
     setIsSubmitting(true);
     setError(null);
 
     try {
-      const res = await fetch('/api/v1/sessions', {
+      // 1. Create session (no body required)
+      const createRes = await fetch('/api/v1/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task: trimmed, user_id: 'web' }),
       });
 
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { detail?: string };
-        throw new Error(body.detail ?? `Server error ${res.status}`);
+      if (!createRes.ok) {
+        const body = (await createRes.json().catch(() => ({}))) as { detail?: string };
+        throw new Error(body.detail ?? `Server error ${createRes.status}`);
       }
 
-      const data = (await res.json()) as CreateSessionResponse;
-      const sessionId = data.session_id;
+      const { session_id: sessionId } = (await createRes.json()) as CreateSessionResponse;
 
-      // Start the session
-      await fetch(`/api/v1/sessions/${sessionId}/start`, { method: 'POST' });
+      // 2. Start session with task + selected models
+      const startRes = await fetch(`/api/v1/sessions/${sessionId}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task: trimmed,
+          user_id: 'web',
+          selected_models: selectedModels,
+        }),
+      });
+
+      if (!startRes.ok) {
+        const body = (await startRes.json().catch(() => ({}))) as { detail?: string };
+        throw new Error(body.detail ?? `Server error ${startRes.status}`);
+      }
 
       if (onSessionCreated) {
         onSessionCreated(sessionId);
@@ -71,9 +89,13 @@ export default function TaskSubmit({ onSessionCreated }: TaskSubmitProps) {
         Submit a Task to Pantheon
       </h2>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {/* ── Task input ─────────────────────────────────────────────────── */}
         <div>
-          <label htmlFor="task-input" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label
+            htmlFor="task-input"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+          >
             Task description
           </label>
           <textarea
@@ -90,7 +112,7 @@ export default function TaskSubmit({ onSessionCreated }: TaskSubmitProps) {
           />
         </div>
 
-        {/* Example chips */}
+        {/* ── Example chips ──────────────────────────────────────────────── */}
         <div className="flex flex-wrap gap-2">
           {EXAMPLE_TASKS.map((ex) => (
             <button
@@ -107,13 +129,18 @@ export default function TaskSubmit({ onSessionCreated }: TaskSubmitProps) {
           ))}
         </div>
 
+        {/* ── Model selector ─────────────────────────────────────────────── */}
+        <ModelSelector onChange={setSelectedModels} disabled={isSubmitting} />
+
+        {/* ── Error message ──────────────────────────────────────────────── */}
         {error && (
           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
         )}
 
+        {/* ── Submit ─────────────────────────────────────────────────────── */}
         <button
           type="submit"
-          disabled={isSubmitting || !task.trim()}
+          disabled={isSubmitting || !task.trim() || selectedModels.length === 0}
           className="w-full py-2.5 px-4 rounded-lg font-semibold text-sm text-white
                      bg-primary-600 hover:bg-primary-700 active:bg-primary-800
                      disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -127,7 +154,7 @@ export default function TaskSubmit({ onSessionCreated }: TaskSubmitProps) {
               Creating session…
             </span>
           ) : (
-            'Launch Pantheon Session'
+            `Launch Pantheon Session · ${selectedModels.length} model${selectedModels.length !== 1 ? 's' : ''}`
           )}
         </button>
       </form>
