@@ -21,35 +21,45 @@ logger = logging.getLogger(__name__)
 PHASE_TIMEOUT_SECONDS: int = int(os.getenv("PHASE_TIMEOUT_SECONDS", "60"))
 
 _SYSTEM_PROMPT = """\
-You are a senior project manager writing the final summary of a multi-AI
-collaborative analysis session.
+你是一位資深專案經理，負責撰寫多 AI 協作分析會議的最終總結報告。
 
-You will receive:
-- The original task
-- Each AI model's independent research summary
-- The full multi-round debate transcript
-- Each model's vote and the consensus decision
+你將收到以下資料：
+- 原始任務
+- 每個 AI 模型的獨立研究摘要
+- 完整的多輪辯論記錄
+- 每個模型的投票結果與共識決定
 
-Produce a structured markdown report with these exact sections:
+請用繁體中文撰寫一份結構化的 Markdown 報告，包含以下確切章節。
+重要：每個章節必須詳盡且深入——每節最少 100 到 300 字。
+不要只寫簡短的條列式重點，請對每個要點加以說明、提供背景脈絡與推理依據。
 
-## Summary
-One-paragraph executive summary of the task and the collaborative process.
+## 摘要
+撰寫 2–3 段（至少 150 字），涵蓋：任務內容為何、為何重要、哪些 AI 模型參與、
+進行了幾輪辯論，以及整體協作過程的概況。
 
-## Key Insights
-Bullet list of the most important findings surfaced during research and debate.
+## 關鍵洞見
+列出至少 5 項關鍵洞見。每項洞見以粗體標題開頭，後跟 2–4 句說明（整節至少 200 字）。
+涵蓋研究階段與辯論階段的發現。
 
-## Consensus Decision
-The agreed-upon best approach or answer, with a brief rationale.
+## 共識決定
+撰寫至少 150 字，說明：達成共識的答案或方案為何、背後的核心邏輯、
+哪些模型支持此立場，以及這個決定對使用者的實際意義。
 
-## Dissenting Views
-Any significant minority positions or caveats raised in the debate.
+## 異見觀點
+撰寫至少 100 字，涵蓋：少數派的立場、被提出但遭否決的替代方案、
+重要的警告、風險，或共識未能完全處理的權衡取捨。
+若所有模型均達成一致，請說明共識可能不成立的情境或條件。
 
-## Cost Breakdown
-A table or bullet list showing token usage / estimated cost by model and phase
-(use the data provided; write "N/A" if unavailable).
+## 建議行動
+撰寫至少 150 字，提供具體可行的後續步驟，協助使用者根據共識決定採取行動。
+請按優先順序排列，並說明每項建議的理由。
 
-Be precise, neutral, and concise.  Do not invent information not present in
-the inputs.\
+## 費用明細
+以表格或條列方式呈現各模型與各階段的 Token 用量及估計費用
+（使用所提供的數據；如無資料請填寫「無資料」）。
+
+請保持精確、客觀、以證據為基礎。不要捏造輸入資料中沒有的資訊。
+請擴展已提供的內容——深度與詳盡程度至關重要。\
 """
 
 
@@ -121,12 +131,12 @@ async def synthesizer_node(state: PantheonState) -> PantheonState:
     cost_section = _format_cost(state.get("cost_summary", {}))
 
     user_message = (
-        f"## Original Task\n{state['task']}\n\n"
-        f"## Research Summaries\n{research_section}\n\n"
-        f"## Debate Transcript\n{debate_section}\n\n"
-        f"## Votes & Consensus\n{votes_section}\n\n"
-        f"## Cost Data\n{cost_section}\n\n"
-        "Now write the final report."
+        f"## 原始任務\n{state['task']}\n\n"
+        f"## 研究摘要\n{research_section}\n\n"
+        f"## 辯論記錄\n{debate_section}\n\n"
+        f"## 投票與共識\n{votes_section}\n\n"
+        f"## 費用資料\n{cost_section}\n\n"
+        "請現在撰寫最終報告。"
     )
 
     final_report: str

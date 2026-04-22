@@ -7,8 +7,8 @@ import dotenv
 import logging
 from dataclasses import dataclass
 
-# Load environment variables
-dotenv.load_dotenv()
+# Load environment variables (override=True ensures .env takes precedence over shell env)
+dotenv.load_dotenv(override=True)
 
 # Configure logging
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()

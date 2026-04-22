@@ -24,11 +24,10 @@ logger = logging.getLogger(__name__)
 MAX_DEBATE_ROUNDS: int = int(os.getenv("MAX_DEBATE_ROUNDS", "3"))
 
 _SYSTEM_PROMPT = """\
-You are participating in a structured multi-model debate.
-Your role: analyse the task and the arguments made so far, then contribute \
-a focused, well-reasoned response that either builds on, challenges, or \
-synthesises previous positions.
-Be concise (≤ 300 words).  Identify yourself only by your model name.\
+你正在參與一場結構化的多模型辯論。
+你的角色：分析任務與目前已提出的論點，然後提出一個有條理、有根據的回應，\
+可以是延伸、挑戰或整合先前的立場。
+回應請簡潔（不超過 300 字），並在開頭標明你的模型名稱。\
 """
 
 

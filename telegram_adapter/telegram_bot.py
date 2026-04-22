@@ -3,12 +3,14 @@ Telegram-specific bot implementation.
 """
 
 import asyncio
+import base64
 import json
 import logging
 import uuid
 from datetime import datetime, timezone
 from typing import List, Any, Dict
 
+import litellm
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
@@ -214,7 +216,8 @@ class TelegramBot:
             CommandHandler("status", self.handle_status),
             CommandHandler("report", self.handle_report),
             CommandHandler("cancel", self.handle_cancel),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
+            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message),
+            MessageHandler(filters.PHOTO, self.handle_photo),
         ])
         app.add_error_handler(self.handle_error)
 
@@ -369,22 +372,63 @@ class TelegramBot:
         """/status <session_id> — Check current phase."""
         args = context.args
         if not args:
-            await update.message.reply_text("Usage: /status <session_id>")
+            await update.message.reply_text("用法：/status <session_id>")
             return
 
         session_id = args[0]
         if not self.redis:
-            await update.message.reply_text("Redis not available.")
+            await update.message.reply_text("Redis 無法連線。")
             return
 
         session = await self.redis.hgetall(_session_key(session_id))
         if not session:
-            await update.message.reply_text("Session not found.")
+            await update.message.reply_text(f"找不到工作階段 `{session_id}`，可能已過期或不存在。", parse_mode="Markdown")
             return
 
         status = session.get("status", "unknown")
         phase = session.get("phase") or "—"
-        await update.message.reply_text(f"Session `{session_id}`\nStatus: {status}\nPhase: {phase}", parse_mode="Markdown")
+        created_at = session.get("created_at", "")
+        completed_at = session.get("completed_at", "")
+        source = session.get("source", "text")
+        task = session.get("task", "")
+        error = session.get("error", "")
+
+        status_emoji = {"running": "⏳", "complete": "✅", "cancelled": "🚫", "failed": "❌", "pending": "🕐"}.get(status, "❓")
+        phase_emoji = {"routing": "🗺️", "research": "🔬", "debate": "💬", "voting": "🗳️", "synthesis": "📝", "complete": "✅", "cancelled": "🚫"}.get(phase, "▶️")
+        source_label = "📸 圖片" if source == "photo" else "💬 文字"
+
+        elapsed_text = ""
+        if created_at:
+            try:
+                start = datetime.fromisoformat(created_at)
+                end = datetime.fromisoformat(completed_at) if completed_at else datetime.now(timezone.utc)
+                elapsed = int((end - start).total_seconds())
+                mins, secs = divmod(elapsed, 60)
+                elapsed_text = f"\n⏱️ 耗時：{mins}分{secs}秒" if mins else f"\n⏱️ 耗時：{secs}秒"
+            except Exception:
+                pass
+
+        task_preview = (task[:120] + "...") if len(task) > 120 else task
+
+        lines = [
+            f"📋 工作階段 `{session_id[:8]}...`",
+            "",
+            f"{status_emoji} 狀態：{status}",
+            f"{phase_emoji} 階段：{phase}",
+            f"{source_label}{elapsed_text}",
+            "",
+            f"📌 任務：{task_preview}",
+            "",
+            f"🕐 建立時間：{created_at[:19] if created_at else '—'}",
+        ]
+        if completed_at:
+            lines.append(f"🏁 完成時間：{completed_at[:19]}")
+        if error:
+            lines.append(f"⚠️ 錯誤：{error}")
+        if status == "complete":
+            lines.append(f"\n使用 /report {session_id} 取得完整報告。")
+
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
     async def handle_report(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """/report <session_id> — Get the final report."""
@@ -498,6 +542,85 @@ class TelegramBot:
         finally:
             await pubsub.unsubscribe(channel)
             await pubsub.aclose()
+
+    async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """處理用戶傳送的圖片，使用 GPT-4o Vision 分析後啟動 Pantheon 工作流程。"""
+        user_id = str(update.effective_user.id)
+        chat_id = update.effective_chat.id
+
+        await update.message.reply_text("📸 收到圖片，正在分析中，請稍候...")
+
+        try:
+            photo = update.message.photo[-1]
+            tg_file = await context.bot.get_file(photo.file_id)
+            image_bytes: bytearray = await tg_file.download_as_bytearray()
+            image_b64 = base64.b64encode(bytes(image_bytes)).decode("utf-8")
+
+            caption = (update.message.caption or "").strip()
+            if caption:
+                vision_prompt = f"請詳細描述這張圖片的內容，然後針對以下問題提供分析：\n{caption}"
+            else:
+                vision_prompt = (
+                    "請詳細描述這張圖片的所有重要內容，包括：圖片類型、主要元素、"
+                    "文字（如有）、數據或圖表（如有），以及任何值得注意的細節。"
+                )
+
+            vision_response = await litellm.acompletion(
+                model="gpt-4o",
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}", "detail": "high"}},
+                        {"type": "text", "text": vision_prompt},
+                    ],
+                }],
+                max_tokens=1000,
+            )
+            image_description: str = vision_response.choices[0].message.content.strip()
+
+            task = (
+                f"【圖片分析任務】\n\n用戶問題：{caption}\n\n圖片內容分析：\n{image_description}"
+                if caption else
+                f"【圖片分析任務】\n\n圖片內容分析：\n{image_description}"
+            )
+
+            await update.message.reply_text(
+                f"🔍 圖片分析完成！正在啟動多 AI 協作分析...\n\n"
+                f"📋 分析摘要：{image_description[:200]}{'...' if len(image_description) > 200 else ''}"
+            )
+
+        except Exception as exc:
+            logger.exception("圖片分析失敗：%s", exc)
+            await update.message.reply_text(f"❌ 圖片分析失敗：{exc}\n請重試或使用 /submit 直接輸入文字任務。")
+            return
+
+        if not self.redis:
+            await update.message.reply_text("Redis 無法連線，無法建立工作階段。")
+            return
+
+        session_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        await self.redis.hset(_session_key(session_id), mapping={
+            "session_id": session_id,
+            "user_id": user_id,
+            "chat_id": str(chat_id),
+            "task": task,
+            "status": "running",
+            "phase": "routing",
+            "created_at": now,
+            "source": "photo",
+        })
+        await self.redis.expire(_session_key(session_id), SESSION_TTL)
+
+        asyncio.create_task(_run_session(session_id, task, user_id, self.redis))
+        asyncio.create_task(self._watch_session(session_id, chat_id, context.application.bot))
+
+        await update.message.reply_text(
+            f"✅ 工作階段已建立！\nID：`{session_id}`\n\n"
+            f"使用 /status {session_id} 查詢進度。\n"
+            f"使用 /cancel {session_id} 取消工作階段。",
+            parse_mode="Markdown",
+        )
 
     async def handle_error(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Log errors"""

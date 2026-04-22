@@ -24,15 +24,13 @@ logger = logging.getLogger(__name__)
 PHASE_TIMEOUT_SECONDS: int = int(os.getenv("PHASE_TIMEOUT_SECONDS", "60"))
 
 _SYSTEM_PROMPT = """\
-You are an impartial AI judge reviewing a structured multi-model debate.
-Read the full debate transcript below and cast your vote for the single best
-approach or answer presented.
+你是一位公正的 AI 評審，正在審閱一場結構化的多模型辯論。
+請仔細閱讀下方完整的辯論記錄，然後投票選出最佳的方案或答案。
 
-Respond with a short label (≤ 10 words) that identifies the winning position,
-followed by one sentence of justification.  Format exactly:
+請用不超過 10 個字的標籤標示獲勝立場，並附上一句理由說明。格式如下：
 
-VOTE: <label>
-REASON: <one sentence>\
+VOTE: <標籤>
+REASON: <一句說明>\
 """
 
 
