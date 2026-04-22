@@ -1,5 +1,31 @@
 # Project Pantheon — Claude Instructions
 
+## Session Start Protocol
+
+**REQUIRED before any other action in every session:**
+
+```bash
+# 1. Confirm which directory and branch you're in
+pwd && git branch --show-current
+
+# 2. Fetch and check divergence
+git fetch origin
+git status
+git log origin/main..HEAD --oneline   # local-only commits
+git log HEAD..origin/main --oneline   # upstream commits you don't have
+
+# 3. If local is behind origin: pull before writing any code
+git pull --rebase origin main
+```
+
+**Rules:**
+- NEVER `git stash` if the upcoming pull may include file renames or deletions — use `git commit -m "wip: ..."` instead
+- NEVER start coding when `git log HEAD..origin/main` shows commits — get in sync first
+- If two local clones exist for the same repo, prefer `git worktree` to avoid divergence confusion
+- CLAUDE.md is the **first** file committed, not the last — keep Project Context current
+
+---
+
 ## Before Starting Any New Day/Stage
 
 **REQUIRED before writing any implementation code:**
