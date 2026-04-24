@@ -15,6 +15,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from graph.state import PantheonState
 from llm.provider import PHASE_MODEL_ROLES, LLMProvider
+from llm.quota_fallback import ainvoke_with_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,6 @@ async def synthesizer_node(state: PantheonState) -> PantheonState:
     pm_model_key = state.get("pm_model") or PHASE_MODEL_ROLES.get(
         "synthesizer", "claude-sonnet"
     )
-    llm = provider.get_chat_model(pm_model_key)
 
     research_section = _format_research(state.get("research_results", {}))
     debate_section = _format_debate(state.get("debate_history", []))
@@ -141,20 +141,22 @@ async def synthesizer_node(state: PantheonState) -> PantheonState:
 
     final_report: str
     try:
-        response = await llm.ainvoke(
-            [
+        actual_model, content = await ainvoke_with_fallback(
+            provider=provider,
+            model_key=pm_model_key,
+            messages=[
                 SystemMessage(content=_SYSTEM_PROMPT),
                 HumanMessage(content=user_message),
-            ]
+            ],
+            # Synthesizer must always produce a report — fall through to
+            # Claude Haiku / GPT-4o-mini if the primary provider is exhausted.
+            allow_cross_provider=True,
         )
-        content: str = (
-            response.content if hasattr(response, "content") else str(response)
-        )
-        final_report = content.strip()
+        final_report = content
         logger.info(
             "Synthesizer complete: %d chars in final report (model=%s)",
             len(final_report),
-            pm_model_key,
+            actual_model,
         )
     except Exception as exc:
         logger.error("Synthesizer failed: %s", exc)

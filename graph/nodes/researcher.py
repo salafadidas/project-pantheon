@@ -14,8 +14,10 @@ import os
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from graph.progress import publish_progress
 from graph.state import PantheonState
 from llm.provider import PHASE_MODEL_ROLES, LLMProvider
+from llm.quota_fallback import ProviderQuotaExhausted, ainvoke_with_fallback
 from utils.logging_config import get_logger
 from utils.timeout import with_timeout, TimeoutError as PantheonTimeoutError
 
@@ -48,6 +50,7 @@ async def researcher_node(state: PantheonState) -> PantheonState:
     """
     provider = LLMProvider()
     researcher_models = _resolve_researcher_models(provider, state)
+    session_id: str = state.get("session_id", "")
 
     tasks = [
         _research_with_timeout(
@@ -55,6 +58,7 @@ async def researcher_node(state: PantheonState) -> PantheonState:
             model_key=model_key,
             task=state["task"],
             timeout=PHASE_TIMEOUT_SECONDS,
+            session_id=session_id,
         )
         for model_key in researcher_models
     ]
@@ -80,6 +84,7 @@ async def _research_with_timeout(
     model_key: str,
     task: str,
     timeout: int,
+    session_id: str = "",
 ) -> tuple[str, str]:
     """Call a single researcher model, enforcing a timeout.
 
@@ -87,6 +92,19 @@ async def _research_with_timeout(
         (model_key, research_text) — on failure, research_text is an error
         placeholder so downstream nodes always have an entry for every model.
     """
+    from datetime import datetime, timezone  # local import to avoid circular at module level
+
+    async def _publish(content: str, *, skipped: bool) -> None:
+        await publish_progress(session_id, {
+            "event": "model_response",
+            "phase": "research",
+            "model": model_key,
+            "model_requested": None,
+            "content": content,
+            "skipped": skipped,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
     try:
         result = await with_timeout(
             _get_research(provider=provider, model_key=model_key, task=task),
@@ -94,13 +112,25 @@ async def _research_with_timeout(
             label=f"researcher:{model_key}",
         )
         logger.info("researcher_done", model=model_key, chars=len(result))
+        await _publish(result, skipped=False)
         return model_key, result
     except PantheonTimeoutError:
         logger.warning("researcher_timeout", model=model_key, timeout_s=timeout)
-        return model_key, f"[ERROR: {model_key} timed out after {timeout}s]"
+        content = f"⚠️ {model_key} timed out after {timeout}s — skipped."
+        await _publish(content, skipped=True)
+        return model_key, content
+    except ProviderQuotaExhausted as exc:
+        # Clean, user-friendly message — the str() of the exception is already
+        # formatted for the UI by quota_fallback.py
+        logger.warning("researcher_quota_exhausted", model=model_key, detail=str(exc))
+        content = str(exc)
+        await _publish(content, skipped=True)
+        return model_key, content
     except Exception as exc:
         logger.warning("researcher_error", model=model_key, error=str(exc))
-        return model_key, f"[ERROR: {model_key} failed — {exc}]"
+        content = f"⚠️ {model_key} encountered an error and was skipped."
+        await _publish(content, skipped=True)
+        return model_key, content
 
 
 async def _get_research(
@@ -109,9 +139,11 @@ async def _get_research(
     model_key: str,
     task: str,
 ) -> str:
-    """Invoke the model and return its research text."""
-    llm = provider.get_chat_model(model_key)
+    """Invoke the model and return its research text.
 
+    Automatically falls back to cheaper models within the same provider when a
+    quota / rate-limit error (429) is encountered.
+    """
     messages = [
         SystemMessage(content=_SYSTEM_PROMPT),
         HumanMessage(
@@ -122,9 +154,21 @@ async def _get_research(
         ),
     ]
 
-    response = await llm.ainvoke(messages)
-    content: str = response.content if hasattr(response, "content") else str(response)
-    return content.strip()
+    actual_model, content = await ainvoke_with_fallback(
+        provider=provider,
+        model_key=model_key,
+        messages=messages,
+        allow_cross_provider=True,  # NVIDIA NIM (DeepSeek) backs up Gemini when quota hits
+    )
+
+    if actual_model != model_key:
+        logger.info(
+            "researcher_quota_fallback: used %s instead of %s",
+            actual_model,
+            model_key,
+        )
+
+    return content
 
 
 def _resolve_researcher_models(provider: LLMProvider, state: PantheonState) -> list[str]:

@@ -12,6 +12,10 @@ from pydantic import BaseModel
 from redis.asyncio import Redis
 
 from graph.pantheon_graph import pantheon_graph
+from graph.progress import register as register_progress_queue
+from graph.progress import unregister as unregister_progress_queue
+from graph.progress import close_queue as close_progress_queue
+from graph.progress import is_sentinel
 
 router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])
 
@@ -183,10 +187,45 @@ async def cancel_session(session_id: str, request: Request) -> None:
 # Graph runner                                                                 #
 # --------------------------------------------------------------------------- #
 
+async def _drain_progress(session_id: str, channel: str, redis: Redis) -> None:
+    """Read per-model events from the progress bus and forward to Redis pub/sub.
+
+    Runs concurrently with the graph via asyncio.gather().  Stops when it
+    receives the end-of-stream sentinel published by _run_session after the
+    graph completes.
+    """
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+
+    from graph.progress import get as get_queue
+    q = get_queue(session_id)
+    if q is None:
+        return
+
+    while True:
+        try:
+            item = await q.get()
+        except asyncio.CancelledError:
+            break
+
+        if is_sentinel(item):
+            break
+
+        try:
+            await redis.publish(channel, json.dumps(item))
+        except Exception as exc:  # noqa: BLE001
+            _log.warning("progress_drain: redis publish failed: %s", exc)
+
+
 async def _run_session(
     session_id: str, task: str, user_id: str, redis: Redis, selected_models: list[str]
 ) -> None:
-    """Execute the Pantheon graph and stream events to Redis pub/sub."""
+    """Execute the Pantheon graph and stream events to Redis pub/sub.
+
+    Two concurrent tasks run in parallel:
+    - The LangGraph astream loop (publishes coarse phase_complete events).
+    - _drain_progress (forwards fine-grained per-model events from the nodes).
+    """
     channel = _events_channel(session_id)
     key = _session_key(session_id)
 
@@ -207,7 +246,12 @@ async def _run_session(
         "messages": [],
     }
 
-    try:
+    # Register the per-session progress queue BEFORE starting the graph so that
+    # nodes can publish the moment they finish a model call.
+    register_progress_queue(session_id)
+
+    async def _run_graph() -> dict:
+        """Stream the graph and return the final state."""
         final_state: dict = {}
         async for chunk in pantheon_graph.astream(initial_state):
             for node_name, state_update in chunk.items():
@@ -216,11 +260,20 @@ async def _run_session(
 
                 await redis.hset(key, "phase", state_update.get("phase", phase))
 
-                event_data: dict = {"event": "phase_complete", "phase": phase, "timestamp": now}
+                event_data: dict = {
+                    "event": "phase_complete",
+                    "phase": phase,
+                    "timestamp": now,
+                }
                 if node_name == "researcher":
-                    event_data["data"] = {"research_results": state_update.get("research_results", {})}
+                    event_data["data"] = {
+                        "research_results": state_update.get("research_results", {}),
+                    }
                 elif node_name == "debater":
-                    event_data["data"] = {"debate_round": state_update.get("debate_round", 0)}
+                    event_data["data"] = {
+                        "debate_round": state_update.get("debate_round", 0),
+                        "debate_history": state_update.get("debate_history", []),
+                    }
                 elif node_name == "voter":
                     event_data["data"] = {
                         "votes": state_update.get("votes", {}),
@@ -232,6 +285,24 @@ async def _run_session(
 
                 await redis.publish(channel, json.dumps(event_data))
                 final_state = state_update
+        return final_state
+
+    async def _run_graph_then_close() -> dict:
+        """Run the graph; send the sentinel so the drainer exits cleanly."""
+        try:
+            return await _run_graph()
+        finally:
+            await close_progress_queue(session_id)
+
+    try:
+        # Run the graph and the progress drainer concurrently.
+        # _run_graph_then_close sends the sentinel so the drainer exits after
+        # the last model event has been forwarded to Redis.
+        results = await asyncio.gather(
+            _run_graph_then_close(),
+            _drain_progress(session_id, channel, redis),
+        )
+        final_state: dict = results[0]
 
         final_report = final_state.get("final_report") or ""
         cost_summary = final_state.get("cost_summary") or {}
@@ -266,4 +337,8 @@ async def _run_session(
             }),
         )
     finally:
+        # close_progress_queue is called inside _run_graph_then_close so the
+        # drainer always receives the sentinel.  We still unregister the queue
+        # here so memory is freed regardless of success / cancellation / error.
+        unregister_progress_queue(session_id)
         _session_tasks.pop(session_id, None)

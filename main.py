@@ -4,6 +4,7 @@ Main entry point for the Telegram bot + FastAPI application.
 
 import asyncio
 import os
+from contextlib import asynccontextmanager
 from redis.asyncio import Redis
 
 from utils.logging_config import configure_logging, get_logger
@@ -30,11 +31,37 @@ from api.v1.models import router as models_router
 
 logger = get_logger(__name__)
 
+
+# --------------------------------------------------------------------------- #
+# FastAPI lifespan — runs on every uvicorn start, with or without Telegram     #
+# --------------------------------------------------------------------------- #
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Connect Redis on startup so API routes work when run standalone."""
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    try:
+        redis = Redis.from_url(redis_url, decode_responses=True)
+        await redis.ping()
+        app.state.redis = redis
+        logger.info("Redis connected at %s", redis_url)
+    except Exception as exc:
+        logger.warning("Redis unavailable (%s) — session endpoints disabled", exc)
+        app.state.redis = None
+
+    yield  # app runs here
+
+    # Graceful shutdown
+    if getattr(app.state, "redis", None):
+        await app.state.redis.aclose()
+        logger.info("Redis connection closed")
+
+
 # --------------------------------------------------------------------------- #
 # FastAPI app                                                                  #
 # --------------------------------------------------------------------------- #
 
-app = FastAPI(title="Project Pantheon", version="1.0.0")
+app = FastAPI(title="Project Pantheon", version="1.0.0", lifespan=lifespan)
 app.include_router(health_router)
 app.include_router(sessions_router)
 app.include_router(ws_router)

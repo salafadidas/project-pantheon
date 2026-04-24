@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export interface DebateEntry {
   round: number;
   model: string;
+  /** Populated when a quota fallback was used; holds the originally requested model key. */
+  modelRequested?: string | null;
   content: string;
   timestamp: string;
 }
@@ -115,13 +117,31 @@ export function useSession(sessionId: string | null): SessionState {
         return next;
       });
     } else if (type === 'model_response') {
-      const entry: DebateEntry = {
-        round: (event.round as number) ?? 0,
-        model: (event.model as string) ?? '',
-        content: (event.content as string) ?? '',
-        timestamp: (event.timestamp as string) ?? new Date().toISOString(),
-      };
-      setState((s) => ({ ...s, debateHistory: [...s.debateHistory, entry] }));
+      const phase = (event.phase as string) ?? '';
+      const model = (event.model as string) ?? '';
+      const content = (event.content as string) ?? '';
+      const timestamp = (event.timestamp as string) ?? new Date().toISOString();
+
+      if (phase === 'research') {
+        // Update research results card-by-card as each model finishes
+        // (before phase_complete fires for the whole node)
+        if (model) {
+          setState((s) => ({
+            ...s,
+            researchResults: { ...s.researchResults, [model]: content },
+          }));
+        }
+      } else if (phase === 'debate') {
+        const modelRequested = (event.model_requested as string | null) ?? null;
+        const entry: DebateEntry = {
+          round: (event.round as number) ?? 1,
+          model,
+          modelRequested: modelRequested !== model ? modelRequested : null,
+          content,
+          timestamp,
+        };
+        setState((s) => ({ ...s, debateHistory: [...s.debateHistory, entry] }));
+      }
     } else if (type === 'session_complete') {
       setState((s) => ({
         ...s,

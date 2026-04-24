@@ -1,6 +1,16 @@
 import React from 'react';
 import type { DebateEntry } from '../hooks/useSession';
 
+// Detect quota-exhausted / error placeholder text produced by the backend
+function isSkippedEntry(content: string): boolean {
+  return (
+    content.startsWith('⚠️') ||
+    content.startsWith('[ERROR') ||
+    content.startsWith('[TIMEOUT') ||
+    content.startsWith('[QUOTA')
+  );
+}
+
 // ------------------------------------------------------------------ types ---
 
 interface DiscussionThreadProps {
@@ -30,6 +40,18 @@ const MODEL_STYLES: Record<string, { bg: string; border: string; badge: string; 
     badge: 'bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-200',
     label: 'Gemini',
   },
+  deepseek: {
+    bg: 'bg-violet-50 dark:bg-violet-900/20',
+    border: 'border-violet-200 dark:border-violet-700',
+    badge: 'bg-violet-100 text-violet-700 dark:bg-violet-800 dark:text-violet-200',
+    label: 'DeepSeek V3',
+  },
+  kimi: {
+    bg: 'bg-violet-50 dark:bg-violet-900/20',
+    border: 'border-violet-200 dark:border-violet-700',
+    badge: 'bg-violet-100 text-violet-700 dark:bg-violet-800 dark:text-violet-200',
+    label: 'Kimi K2.5',
+  },
 };
 
 const DEFAULT_STYLE = {
@@ -42,8 +64,10 @@ const DEFAULT_STYLE = {
 function resolveStyle(model: string) {
   const key = model.toLowerCase();
   if (key.includes('claude')) return MODEL_STYLES.claude;
-  if (key.includes('gpt')) return MODEL_STYLES.gpt;
+  if (key.includes('gpt') || key.includes('o3') || key.includes('o4')) return MODEL_STYLES.gpt;
   if (key.includes('gemini')) return MODEL_STYLES.gemini;
+  if (key.includes('deepseek')) return MODEL_STYLES.deepseek;
+  if (key.includes('kimi')) return MODEL_STYLES.kimi;
   return { ...DEFAULT_STYLE, label: model };
 }
 
@@ -68,6 +92,24 @@ function ResearchSection({ results }: { results: Record<string, string> }) {
       </h3>
       <div className="space-y-3">
         {entries.map(([model, content]) => {
+          if (isSkippedEntry(content)) {
+            return (
+              <div
+                key={model}
+                className="rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 flex items-start gap-2"
+              >
+                <span className="text-amber-500 mt-0.5 shrink-0" aria-hidden>⚠️</span>
+                <div>
+                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                    {model} — skipped
+                  </span>
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 whitespace-pre-wrap">
+                    {content.replace(/^⚠️\s*/, '')}
+                  </p>
+                </div>
+              </div>
+            );
+          }
           const style = resolveStyle(model);
           return (
             <div
@@ -153,6 +195,27 @@ export default function DiscussionThread({
           </h3>
           <div className="space-y-3">
             {entries.map((entry, i) => {
+              const skipped = isSkippedEntry(entry.content);
+              if (skipped) {
+                // Render quota/error entries as a compact warning notice
+                return (
+                  <div
+                    key={i}
+                    className="rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 flex items-start gap-2"
+                  >
+                    <span className="text-amber-500 mt-0.5 shrink-0" aria-hidden>⚠️</span>
+                    <div>
+                      <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                        {entry.model} — skipped
+                      </span>
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 whitespace-pre-wrap">
+                        {entry.content.replace(/^⚠️\s*/, '')}
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
+
               const style = resolveStyle(entry.model);
               return (
                 <div
@@ -160,10 +223,20 @@ export default function DiscussionThread({
                   className={`rounded-lg border p-3 ${style.bg} ${style.border}`}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${style.badge}`}>
-                      {style.label || entry.model}
-                    </span>
-                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${style.badge}`}>
+                        {style.label || entry.model}
+                      </span>
+                      {entry.modelRequested && (
+                        <span
+                          className="text-xs text-gray-400 dark:text-gray-500 italic"
+                          title={`Originally requested: ${entry.modelRequested}`}
+                        >
+                          (fallback for {entry.modelRequested})
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0 ml-2">
                       {formatTime(entry.timestamp)}
                     </span>
                   </div>

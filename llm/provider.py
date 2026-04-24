@@ -20,6 +20,7 @@ class ModelProvider(str, Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GOOGLE = "google"
+    NVIDIA = "nvidia"
 
 
 @dataclass(frozen=True)
@@ -35,11 +36,33 @@ class ModelConfig:
 
 # Default model configurations for the PoC (3 models)
 DEFAULT_MODELS: dict[str, ModelConfig] = {
-    "gpt-4o-mini": ModelConfig(
+    # ── OpenAI ──────────────────────────────────────────────────────────────
+    "o3": ModelConfig(
         provider=ModelProvider.OPENAI,
-        model_id="gpt-4o-mini",
-        display_name="GPT-4o Mini",
-        litellm_model="gpt-4o-mini",
+        model_id="o3",
+        display_name="o3",
+        litellm_model="o3",
+        max_tokens=4096,
+    ),
+    "o4-mini": ModelConfig(
+        provider=ModelProvider.OPENAI,
+        model_id="o4-mini",
+        display_name="o4-mini",
+        litellm_model="o4-mini",
+        max_tokens=4096,
+    ),
+    "gpt-4.1": ModelConfig(
+        provider=ModelProvider.OPENAI,
+        model_id="gpt-4.1",
+        display_name="GPT-4.1",
+        litellm_model="gpt-4.1",
+        max_tokens=4096,
+    ),
+    "gpt-4.1-mini": ModelConfig(
+        provider=ModelProvider.OPENAI,
+        model_id="gpt-4.1-mini",
+        display_name="GPT-4.1 Mini",
+        litellm_model="gpt-4.1-mini",
         max_tokens=4096,
     ),
     "gpt-4o": ModelConfig(
@@ -49,11 +72,32 @@ DEFAULT_MODELS: dict[str, ModelConfig] = {
         litellm_model="gpt-4o",
         max_tokens=4096,
     ),
+    "gpt-4o-mini": ModelConfig(
+        provider=ModelProvider.OPENAI,
+        model_id="gpt-4o-mini",
+        display_name="GPT-4o Mini",
+        litellm_model="gpt-4o-mini",
+        max_tokens=4096,
+    ),
+    "claude-opus": ModelConfig(
+        provider=ModelProvider.ANTHROPIC,
+        model_id="claude-opus-4-20250514",
+        display_name="Claude Opus 4",
+        litellm_model="anthropic/claude-opus-4-20250514",
+        max_tokens=4096,
+    ),
     "claude-sonnet": ModelConfig(
         provider=ModelProvider.ANTHROPIC,
         model_id="claude-sonnet-4-20250514",
-        display_name="Claude Sonnet",
+        display_name="Claude Sonnet 4.5",
         litellm_model="anthropic/claude-sonnet-4-20250514",
+        max_tokens=4096,
+    ),
+    "claude-haiku": ModelConfig(
+        provider=ModelProvider.ANTHROPIC,
+        model_id="claude-haiku-4-5-20251001",
+        display_name="Claude Haiku 4.5",
+        litellm_model="anthropic/claude-haiku-4-5-20251001",
         max_tokens=4096,
     ),
     "gemini-2.5-pro": ModelConfig(
@@ -63,12 +107,43 @@ DEFAULT_MODELS: dict[str, ModelConfig] = {
         litellm_model="gemini/gemini-2.5-pro",
         max_tokens=4096,
     ),
+    "gemini-2.5-flash": ModelConfig(
+        provider=ModelProvider.GOOGLE,
+        model_id="gemini-2.5-flash",
+        display_name="Gemini 2.5 Flash",
+        litellm_model="gemini/gemini-2.5-flash",
+        max_tokens=4096,
+    ),
     "gemini-2.0-flash": ModelConfig(
         provider=ModelProvider.GOOGLE,
         model_id="gemini-2.0-flash",
         display_name="Gemini 2.0 Flash",
         litellm_model="gemini/gemini-2.0-flash",
         max_tokens=4096,
+    ),
+    "gemini-2.0-flash-lite": ModelConfig(
+        provider=ModelProvider.GOOGLE,
+        model_id="gemini-2.0-flash-lite",
+        display_name="Gemini 2.0 Flash Lite",
+        litellm_model="gemini/gemini-2.0-flash-lite",
+        max_tokens=4096,
+    ),
+    # ── NVIDIA NIM (free-tier, 40 RPM, 12-month key) ────────────────────────
+    "deepseek-v3": ModelConfig(
+        provider=ModelProvider.NVIDIA,
+        model_id="deepseek-v3",
+        display_name="DeepSeek V3",
+        litellm_model="nvidia_nim/deepseek-ai/deepseek-v3.2",
+        max_tokens=4096,
+        temperature=0.7,
+    ),
+    "kimi-k2": ModelConfig(
+        provider=ModelProvider.NVIDIA,
+        model_id="kimi-k2",
+        display_name="Kimi K2.5",
+        litellm_model="nvidia_nim/moonshotai/kimi-k2-instruct",
+        max_tokens=4096,
+        temperature=0.7,
     ),
 }
 
@@ -77,10 +152,11 @@ PHASE_MODEL_ROLES: dict[str, str] = {
     "pm_router": "gpt-4o-mini",       # Phase 1: fast classification
     "researcher_claude": "claude-sonnet",   # Phase 2: deep research
     "researcher_gpt": "gpt-4o",            # Phase 2: alternative perspective
-    "researcher_gemini": "gemini-2.5-pro",  # Phase 2: third perspective
-    "debater_claude": "claude-sonnet",      # Phase 3: debate
-    "debater_gpt": "gpt-4o",               # Phase 3: debate
-    "debater_gemini": "gemini-2.5-pro",     # Phase 3: debate
+    "researcher_gemini": "gemini-2.5-flash",  # Phase 2: third perspective
+    "debater_claude": "claude-sonnet",       # Phase 3: debate
+    "debater_gpt": "gpt-4o",                # Phase 3: debate
+    "debater_gemini": "gemini-2.5-flash",   # Phase 3: debate (2.5-pro has tiny free quota)
+    "debater_deepseek": "deepseek-v3",      # Phase 3: 4th voice via NVIDIA NIM (free)
     "voter": "gpt-4o-mini",                 # Phase 4: fast voting
     "synthesizer": "claude-sonnet",         # Phase 5: final synthesis
 }

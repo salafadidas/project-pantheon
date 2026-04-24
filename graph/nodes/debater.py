@@ -16,12 +16,16 @@ from typing import List
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from graph.progress import publish_progress
 from graph.state import PantheonState
 from llm.provider import LLMProvider, PHASE_MODEL_ROLES
+from llm.quota_fallback import ProviderQuotaExhausted, ainvoke_with_fallback
+from utils.timeout import with_timeout, TimeoutError as PantheonTimeoutError
 
 logger = logging.getLogger(__name__)
 
 MAX_DEBATE_ROUNDS: int = int(os.getenv("MAX_DEBATE_ROUNDS", "3"))
+DEBATE_TIMEOUT_SECONDS: int = int(os.getenv("DEBATE_TIMEOUT_SECONDS", "60"))
 
 _SYSTEM_PROMPT = """\
 你正在參與一場結構化的多模型辯論。
@@ -63,23 +67,110 @@ async def debate_node(state: PantheonState) -> PantheonState:
     history_snapshot = list(state.get("debate_history", []))
     new_entries: list[dict] = []
 
+    session_id: str = state.get("session_id", "")
+
     for model_key in debate_models:
         try:
-            entry = await _get_model_statement(
-                provider=provider,
-                model_key=model_key,
-                task=state["task"],
-                history=history_snapshot + new_entries,
-                round_number=current_round,
+            entry = await with_timeout(
+                _get_model_statement(
+                    provider=provider,
+                    model_key=model_key,
+                    task=state["task"],
+                    history=history_snapshot + new_entries,
+                    round_number=current_round,
+                ),
+                seconds=float(DEBATE_TIMEOUT_SECONDS),
+                label=f"debater:{model_key}",
             )
             new_entries.append(entry)
             logger.info("Debate round %d: %s responded (%d chars)",
                         current_round, model_key, len(entry["content"]))
+            await publish_progress(session_id, {
+                "event": "model_response",
+                "phase": "debate",
+                "model": entry["model"],
+                "model_requested": entry.get("model_requested"),
+                "round": current_round,
+                "content": entry["content"],
+                "skipped": False,
+                "timestamp": entry["timestamp"],
+            })
+        except PantheonTimeoutError:
+            logger.warning(
+                "Debate round %d: %s timed out after %ds — skipped.",
+                current_round, model_key, DEBATE_TIMEOUT_SECONDS,
+            )
+            ts = datetime.now(timezone.utc).isoformat()
+            content = f"⚠️ {model_key} timed out after {DEBATE_TIMEOUT_SECONDS}s — skipped."
+            new_entries.append({
+                "round": current_round,
+                "model": model_key,
+                "model_requested": None,
+                "content": content,
+                "timestamp": ts,
+                "skipped": True,
+            })
+            await publish_progress(session_id, {
+                "event": "model_response",
+                "phase": "debate",
+                "model": model_key,
+                "model_requested": None,
+                "round": current_round,
+                "content": content,
+                "skipped": True,
+                "timestamp": ts,
+            })
+        except ProviderQuotaExhausted as exc:
+            # Log cleanly and add a skip-notice entry so the UI shows what happened
+            logger.warning(
+                "Debate round %d: %s quota exhausted — skipped.",
+                current_round, model_key,
+            )
+            ts = datetime.now(timezone.utc).isoformat()
+            content = str(exc)
+            new_entries.append({
+                "round": current_round,
+                "model": model_key,
+                "model_requested": None,
+                "content": content,
+                "timestamp": ts,
+                "skipped": True,
+            })
+            await publish_progress(session_id, {
+                "event": "model_response",
+                "phase": "debate",
+                "model": model_key,
+                "model_requested": None,
+                "round": current_round,
+                "content": content,
+                "skipped": True,
+                "timestamp": ts,
+            })
         except Exception as exc:
             logger.warning(
                 "Debate round %d: model %s failed — skipping. Error: %s",
                 current_round, model_key, exc,
             )
+            ts = datetime.now(timezone.utc).isoformat()
+            content = f"⚠️ {model_key} encountered an error and was skipped."
+            new_entries.append({
+                "round": current_round,
+                "model": model_key,
+                "model_requested": None,
+                "content": content,
+                "timestamp": ts,
+                "skipped": True,
+            })
+            await publish_progress(session_id, {
+                "event": "model_response",
+                "phase": "debate",
+                "model": model_key,
+                "model_requested": None,
+                "round": current_round,
+                "content": content,
+                "skipped": True,
+                "timestamp": ts,
+            })
 
     return {
         **state,
@@ -97,8 +188,11 @@ async def _get_model_statement(
     history: list[dict],
     round_number: int,
 ) -> dict:
-    """Call a single model and return a debate-history entry."""
-    llm = provider.get_chat_model(model_key)
+    """Call a single model and return a debate-history entry.
+
+    Automatically falls back to cheaper models within the same provider when a
+    quota / rate-limit error (429) is encountered.
+    """
     history_text = _format_history(history)
 
     messages = [
@@ -111,13 +205,19 @@ async def _get_model_statement(
         )),
     ]
 
-    response = await llm.ainvoke(messages)
-    content: str = response.content if hasattr(response, "content") else str(response)
+    actual_model, content = await ainvoke_with_fallback(
+        provider=provider,
+        model_key=model_key,
+        messages=messages,
+        allow_cross_provider=True,  # NVIDIA NIM (DeepSeek) backs up Gemini when quota hits
+    )
 
     return {
         "round": round_number,
-        "model": model_key,
-        "content": content.strip(),
+        "model": actual_model,
+        # Surface fallback visually when the original model was substituted
+        "model_requested": model_key if actual_model != model_key else None,
+        "content": content,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 

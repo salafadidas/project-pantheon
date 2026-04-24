@@ -18,6 +18,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from graph.state import PantheonState
 from llm.provider import PHASE_MODEL_ROLES, LLMProvider
+from llm.quota_fallback import ProviderQuotaExhausted, ainvoke_with_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,9 @@ async def _vote_with_timeout(
     except asyncio.TimeoutError:
         logger.warning("Voter %s timed out after %ds", model_key, timeout)
         return model_key, "[TIMEOUT]"
+    except ProviderQuotaExhausted:
+        logger.warning("Voter %s: quota exhausted — skipping vote", model_key)
+        return model_key, "[QUOTA]"
     except Exception as exc:
         logger.warning("Voter %s failed: %s", model_key, exc)
         return model_key, "[ERROR]"
@@ -129,8 +133,6 @@ async def _cast_vote(
     debate_transcript: str,
 ) -> str:
     """Invoke a single model to cast its vote and return the extracted label."""
-    llm = provider.get_chat_model(model_key)
-
     messages = [
         SystemMessage(content=_SYSTEM_PROMPT),
         HumanMessage(
@@ -142,8 +144,11 @@ async def _cast_vote(
         ),
     ]
 
-    response = await llm.ainvoke(messages)
-    raw: str = response.content if hasattr(response, "content") else str(response)
+    _actual_model, raw = await ainvoke_with_fallback(
+        provider=provider,
+        model_key=model_key,
+        messages=messages,
+    )
 
     # Extract the VOTE: label from the response
     for line in raw.splitlines():
@@ -164,7 +169,7 @@ def _calculate_consensus(votes: dict[str, str]) -> str | None:
     Returns the label that received the most votes.  Returns None only if
     there are no valid votes at all.
     """
-    valid_votes = [v for v in votes.values() if v not in ("[TIMEOUT]", "[ERROR]")]
+    valid_votes = [v for v in votes.values() if v not in ("[TIMEOUT]", "[ERROR]", "[QUOTA]")]
     if not valid_votes:
         return None
 

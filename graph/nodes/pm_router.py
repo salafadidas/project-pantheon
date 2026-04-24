@@ -21,11 +21,14 @@ logger = logging.getLogger(__name__)
 
 PHASE_TIMEOUT_SECONDS: int = int(os.getenv("PHASE_TIMEOUT_SECONDS", "60"))
 
-# Map task types to the most suitable PM model key
+# Map task types to the most suitable PM model key.
+# gemini-2.5-pro is excluded here because it has essentially no free-tier quota;
+# the fallback chain in llm/quota_fallback.py handles it if the user explicitly
+# selects it in the UI.
 _TASK_TYPE_MODEL_MAP: dict[str, str] = {
     "technical": "gpt-4o",
     "creative": "claude-sonnet",
-    "analytical": "gemini-2.5-pro",
+    "analytical": "gemini-2.5-flash",   # was gemini-2.5-pro, too little free quota
     "factual": "gpt-4o-mini",
 }
 
@@ -36,7 +39,7 @@ _SYSTEM_PROMPT = """\
 只回應有效的 JSON，不要加 Markdown 標記或其他文字：
 {
   "task_type": "<technical|creative|analytical|factual>",
-  "pm_model": "<gpt-4o-mini|gpt-4o|claude-sonnet|gemini-2.5-pro|gemini-2.0-flash>",
+  "pm_model": "<gpt-4o-mini|gpt-4o|claude-sonnet|gemini-2.5-flash|gemini-2.0-flash>",
   "reasoning": "<一句話說明選擇原因>"
 }
 
