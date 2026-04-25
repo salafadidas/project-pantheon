@@ -162,7 +162,7 @@ async def ainvoke_with_fallback(
     candidates = [model_key] + same_provider
 
     last_quota_exc: BaseException | None = None
-    for candidate in candidates:
+    for idx, candidate in enumerate(candidates):
         try:
             llm = provider.get_chat_model(candidate)
             response = await llm.ainvoke(list(messages))
@@ -186,7 +186,20 @@ async def ainvoke_with_fallback(
                 )
                 last_quota_exc = exc
                 continue
-            # Non-quota errors bubble up immediately
+            if idx > 0:
+                # We're already in fallback mode.  Any error from a fallback
+                # candidate (e.g. a LiteLLM parsing crash when the model returns
+                # no-quota JSON instead of a proper 429) should skip to the next
+                # candidate rather than surfacing as a confusing generic error.
+                logger.warning(
+                    "quota_fallback: fallback %s failed (%s: %.120s) — trying next",
+                    candidate,
+                    type(exc).__name__,
+                    exc,
+                )
+                last_quota_exc = exc
+                continue
+            # Primary model, genuine non-quota error — bubble up immediately
             raise
 
     # All same-provider fallbacks exhausted — try cross-provider if allowed

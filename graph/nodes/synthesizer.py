@@ -118,10 +118,10 @@ async def synthesizer_node(state: PantheonState) -> PantheonState:
     """
     provider = LLMProvider()
 
-    # Use the session PM model if available; fall back to role default
-    pm_model_key = state.get("pm_model") or PHASE_MODEL_ROLES.get(
-        "synthesizer", "claude-sonnet"
-    )
+    # Always use the designated synthesizer model — never the session pm_model.
+    # pm_model can be set to any debater (including NVIDIA NIM models that time
+    # out on long prompts), which caused the "Synthesis Error: 504" seen in prod.
+    pm_model_key = PHASE_MODEL_ROLES.get("synthesizer", "claude-sonnet")
 
     research_section = _format_research(state.get("research_results", {}))
     debate_section = _format_debate(state.get("debate_history", []))

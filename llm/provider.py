@@ -31,7 +31,7 @@ class ModelConfig:
     display_name: str
     litellm_model: str  # LiteLLM format: "provider/model" or just "model"
     max_tokens: int = 4096
-    temperature: float = 0.7
+    temperature: Optional[float] = 0.7  # None = omit param (required for o-series)
 
 
 # Default model configurations for the PoC (3 models)
@@ -43,6 +43,7 @@ DEFAULT_MODELS: dict[str, ModelConfig] = {
         display_name="o3",
         litellm_model="o3",
         max_tokens=4096,
+        temperature=None,  # o-series rejects the temperature parameter
     ),
     "o4-mini": ModelConfig(
         provider=ModelProvider.OPENAI,
@@ -50,6 +51,7 @@ DEFAULT_MODELS: dict[str, ModelConfig] = {
         display_name="o4-mini",
         litellm_model="o4-mini",
         max_tokens=4096,
+        temperature=None,  # o-series rejects the temperature parameter
     ),
     "gpt-4.1": ModelConfig(
         provider=ModelProvider.OPENAI,
@@ -132,8 +134,10 @@ DEFAULT_MODELS: dict[str, ModelConfig] = {
     "deepseek-v3": ModelConfig(
         provider=ModelProvider.NVIDIA,
         model_id="deepseek-v3",
-        display_name="DeepSeek V3",
-        litellm_model="nvidia_nim/deepseek-ai/deepseek-v3.2",
+        display_name="DeepSeek V4 Flash",
+        # deepseek-v3.2 is permanently unavailable on NIM (504 gateway timeout);
+        # v4-flash is the confirmed working replacement (tested 2026-04-25).
+        litellm_model="nvidia_nim/deepseek-ai/deepseek-v4-flash",
         max_tokens=4096,
         temperature=0.7,
     ),
@@ -236,15 +240,17 @@ class LLMProvider:
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        llm = ChatLiteLLM(
-            model=config.litellm_model,
-            temperature=temp,
-            max_tokens=tokens,
-        )
+        # Build kwargs carefully: o-series models (o3, o4-mini) reject the
+        # temperature parameter entirely — omit it when config.temperature is None.
+        llm_kwargs: dict = {"model": config.litellm_model, "max_tokens": tokens}
+        if temp is not None:
+            llm_kwargs["temperature"] = temp
+
+        llm = ChatLiteLLM(**llm_kwargs)
 
         self._cache[cache_key] = llm
         logger.info(
-            "Created ChatLiteLLM: model=%s, temp=%.1f, max_tokens=%d",
+            "Created ChatLiteLLM: model=%s, temp=%s, max_tokens=%d",
             config.litellm_model,
             temp,
             tokens,

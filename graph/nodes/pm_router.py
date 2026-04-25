@@ -32,6 +32,11 @@ _TASK_TYPE_MODEL_MAP: dict[str, str] = {
     "factual": "gpt-4o-mini",
 }
 
+# Only these models are safe to use as pm_model.  NVIDIA NIM models are
+# excluded because they have high latency / 504-timeout risk on long prompts
+# (the synthesizer receives the largest context of any phase).
+_SAFE_PM_MODELS: frozenset[str] = frozenset(_TASK_TYPE_MODEL_MAP.values())
+
 _SYSTEM_PROMPT = """\
 你是一個負責協調多 AI 協作系統的專案經理。
 你的任務：分類傳入的問題，並選擇最適合的主導 AI 模型。
@@ -79,8 +84,10 @@ async def pm_router_node(state: PantheonState) -> PantheonState:
         chosen = parsed.get("pm_model", "")
         reasoning = parsed.get("reasoning", "")
 
-        # Accept the model if it is registered, otherwise derive from task type
-        if chosen in provider.available_models:
+        # Accept the model only if it is both registered AND in the safe PM set.
+        # NVIDIA NIM models are excluded from _SAFE_PM_MODELS to prevent the
+        # synthesizer from inheriting a high-latency model as its primary.
+        if chosen in provider.available_models and chosen in _SAFE_PM_MODELS:
             pm_model = chosen
         else:
             pm_model = _TASK_TYPE_MODEL_MAP.get(task_type, router_model_key)

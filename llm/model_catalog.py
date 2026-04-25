@@ -211,13 +211,15 @@ DEBATE_MODELS: list[ModelInfo] = [
     # ── NVIDIA NIM (free-tier — 40 RPM, 12-month key) ───────────────────────
     ModelInfo(
         model_id="deepseek-v3",
-        display_name="DeepSeek V3",
+        display_name="DeepSeek V4 Flash",
         provider="NVIDIA NIM",
         provider_color="violet",
         price_input_per_1m=0.00,    # free-tier during promotion
         price_output_per_1m=0.00,
         context_window_k=128,
-        strengths=["Free NVIDIA NIM tier", "Strong code & reasoning", "Open-weights"],
+        # v3.2 was permanently unavailable on NIM (504 gateway timeout);
+        # switched to v4-flash which is confirmed working (2026-04-25).
+        strengths=["Free NVIDIA NIM tier", "Fast inference", "Open-weights"],
         env_key="NVIDIA_NIM_API_KEY",
     ),
     ModelInfo(

@@ -38,7 +38,7 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Connect Redis on startup so API routes work when run standalone."""
+    """Connect Redis on startup and run LLM health check."""
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     try:
         redis = Redis.from_url(redis_url, decode_responses=True)
@@ -48,6 +48,20 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Redis unavailable (%s) — session endpoints disabled", exc)
         app.state.redis = None
+
+    # ── Startup LLM health check ────────────────────────────────────────────
+    # Probes every model with a tiny request so broken models are detected
+    # automatically at boot, not discovered mid-session by the user.
+    # Results are cached in app.state.model_health and served at GET /health/models.
+    from llm.health_check import run_model_health_check
+    from llm.provider import LLMProvider
+    try:
+        logger.info("Running startup LLM health check (this may take ~20s)…")
+        provider = LLMProvider()
+        app.state.model_health = await run_model_health_check(provider)
+    except Exception as exc:
+        logger.error("Startup LLM health check failed: %s", exc)
+        app.state.model_health = {}
 
     yield  # app runs here
 
