@@ -71,16 +71,32 @@ CROSS_PROVIDER_LAST_RESORT: list[str] = [
 # ---------------------------------------------------------------------------
 
 def _is_quota_error(exc: BaseException) -> bool:
-    """Return True when the exception is a provider-side rate-limit / quota error."""
+    """Return True when the exception is a provider-side rate-limit / quota error.
+
+    Also catches gateway timeouts (504) and LiteLLM Timeout exceptions — these
+    represent transient provider unavailability and should trigger fallback rather
+    than surfacing as hard errors.  NVIDIA NIM in particular returns 504 when the
+    inference backend is overloaded (not a bug in the request).
+    """
+    # LiteLLM raises litellm.Timeout for network/inference timeouts — always retry
+    exc_type = type(exc).__name__
+    if "timeout" in exc_type.lower():
+        return True
+
     msg = str(exc).lower()
     quota_signals = (
         # HTTP 429 — explicit rate-limit status
         "429",
-        # HTTP 503 — Gemini "high demand" / transient unavailability
+        # HTTP 503/504 — provider temporarily unavailable / gateway timeout
         "503",
+        "504",
         "unavailable",
         "high demand",
         "serviceunavailable",
+        "gateway timeout",
+        # LiteLLM Timeout string representation
+        "timeout error",
+        "nvidia_nimexception",        # NVIDIA NIM 504 wrapper
         # Provider-specific wording
         "resource_exhausted",
         "quota",
