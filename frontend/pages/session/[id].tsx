@@ -1,6 +1,8 @@
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useSession } from '../../hooks/useSession';
 import PhaseTimeline from '../../components/PhaseTimeline';
 import DiscussionThread from '../../components/DiscussionThread';
@@ -101,9 +103,11 @@ export default function SessionPage() {
                   <h2 className="text-sm font-semibold text-primary-700 dark:text-primary-300 uppercase tracking-wide mb-3">
                     Final Report
                   </h2>
-                  <p className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed">
-                    {finalReport}
-                  </p>
+                  <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:text-gray-900 dark:prose-headings:text-gray-100 prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-li:text-gray-800 dark:prose-li:text-gray-200 prose-code:text-primary-700 dark:prose-code:text-primary-300 prose-pre:bg-gray-100 dark:prose-pre:bg-gray-800">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {finalReport}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               )}
 

@@ -74,7 +74,14 @@ def _is_quota_error(exc: BaseException) -> bool:
     """Return True when the exception is a provider-side rate-limit / quota error."""
     msg = str(exc).lower()
     quota_signals = (
+        # HTTP 429 — explicit rate-limit status
         "429",
+        # HTTP 503 — Gemini "high demand" / transient unavailability
+        "503",
+        "unavailable",
+        "high demand",
+        "serviceunavailable",
+        # Provider-specific wording
         "resource_exhausted",
         "quota",
         "rate limit",
