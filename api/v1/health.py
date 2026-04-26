@@ -112,23 +112,26 @@ async def health_ready(request: Request) -> ReadinessResponse:
 @router.get(
     "/health/models",
     response_model=ModelsHealthResponse,
-    summary="LLM model health (startup probe results)",
+    summary="LLM model health (startup + periodic probe results)",
 )
 async def health_models(request: Request) -> ModelsHealthResponse:
-    """Return startup health check results for all configured LLM models.
+    """Return cached LLM model health.
 
-    Results are cached from the last application startup — they reflect the
-    state of each model at boot time, not real-time.  Restart the app to
-    refresh.  Models with status ``"skipped"`` have no API key configured.
+    Cache is refreshed at startup and periodically (every 5 minutes) by a
+    background task.  Use ``POST /health/models/refresh`` to force an
+    immediate re-probe.  Models with status ``"skipped"`` have no API key
+    configured.
     """
     model_health: dict = getattr(request.app.state, "model_health", {})
-    now = datetime.now(timezone.utc).isoformat()
+    checked_at = getattr(
+        request.app.state, "model_health_checked_at", datetime.now(timezone.utc).isoformat()
+    )
 
     if not model_health:
         return ModelsHealthResponse(
             status="unknown",
             version=_VERSION,
-            checked_at=now,
+            checked_at=checked_at,
             summary={},
             models={},
         )
@@ -151,7 +154,34 @@ async def health_models(request: Request) -> ModelsHealthResponse:
     return ModelsHealthResponse(
         status=overall,
         version=_VERSION,
-        checked_at=now,
+        checked_at=checked_at,
         summary=summary,
         models=model_details,
     )
+
+
+@router.post(
+    "/health/models/refresh",
+    response_model=ModelsHealthResponse,
+    summary="Re-probe all LLM models on demand",
+)
+async def health_models_refresh(request: Request) -> ModelsHealthResponse:
+    """Re-run the LLM health check on demand and update cache.
+
+    Useful when the user wants up-to-the-minute model status before submitting
+    a task.  Same probe that runs at startup — takes ~20 s in the worst case
+    (one model timing out).  If the refresh itself fails, the previous cache
+    is preserved.
+    """
+    from llm.health_check import run_model_health_check
+    from llm.provider import LLMProvider
+
+    try:
+        provider = LLMProvider()
+        request.app.state.model_health = await run_model_health_check(provider)
+        request.app.state.model_health_checked_at = datetime.now(timezone.utc).isoformat()
+    except Exception:
+        # Don't blank the existing cache if refresh fails
+        pass
+
+    return await health_models(request)

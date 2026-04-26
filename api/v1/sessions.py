@@ -107,7 +107,13 @@ async def create_session(request: Request) -> CreateSessionResponse:
 async def start_session(
     session_id: str, body: StartSessionRequest, request: Request
 ) -> dict:
-    """Start execution of a session with the given task."""
+    """Start execution of a session with the given task.
+
+    Filters ``selected_models`` against the live health cache so unhealthy
+    models are never scheduled.  If the user submitted only unhealthy models,
+    returns 400 with a descriptive message.  Dropped models are reported in
+    the response so the UI can show a banner.
+    """
     redis = _get_redis(request)
     session = await redis.hgetall(_session_key(session_id))
     if not session:
@@ -115,16 +121,50 @@ async def start_session(
     if session.get("status") == "running":
         raise HTTPException(status_code=409, detail="Session already running")
 
+    # ── Health gate: drop unhealthy models from the selection ───────────────
+    requested = body.selected_models or []
+    health_cache: dict = getattr(request.app.state, "model_health", {})
+    dropped: list[dict] = []
+    healthy_selected: list[str] = []
+    for model_id in requested:
+        h = health_cache.get(model_id, {"status": "unknown"})
+        status = h.get("status", "unknown")
+        # "unknown" → cache empty; let it through (don't be stricter than the UI).
+        # "ok"/"skipped" → ok; "error"/"timeout" → drop.
+        if status in ("ok", "unknown", "skipped"):
+            healthy_selected.append(model_id)
+        else:
+            dropped.append({
+                "model_id": model_id,
+                "status": status,
+                "reason": (h.get("error") or "")[:200],
+            })
+
+    if requested and not healthy_selected:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "All selected models are currently unhealthy. "
+                           "Refresh model status and pick a healthy model.",
+                "dropped": dropped,
+            },
+        )
+
     await redis.hset(
         _session_key(session_id),
         mapping={"task": body.task, "user_id": body.user_id, "status": "running", "phase": "routing"},
     )
 
     task = asyncio.create_task(
-        _run_session(session_id, body.task, body.user_id, redis, body.selected_models or [])
+        _run_session(session_id, body.task, body.user_id, redis, healthy_selected)
     )
     _session_tasks[session_id] = task
-    return {"session_id": session_id, "status": "started"}
+    return {
+        "session_id": session_id,
+        "status": "started",
+        "selected_models": healthy_selected,
+        "dropped_models": dropped,
+    }
 
 
 @router.get("/{session_id}/status", response_model=SessionStatus)

@@ -38,7 +38,9 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Connect Redis on startup and run LLM health check."""
+    """Connect Redis on startup, run LLM health check, and start background refresh."""
+    from datetime import datetime, timezone
+
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     try:
         redis = Redis.from_url(redis_url, decode_responses=True)
@@ -59,13 +61,45 @@ async def lifespan(app: FastAPI):
         logger.info("Running startup LLM health check (this may take ~20s)…")
         provider = LLMProvider()
         app.state.model_health = await run_model_health_check(provider)
+        app.state.model_health_checked_at = datetime.now(timezone.utc).isoformat()
     except Exception as exc:
         logger.error("Startup LLM health check failed: %s", exc)
         app.state.model_health = {}
+        app.state.model_health_checked_at = datetime.now(timezone.utc).isoformat()
+
+    # ── Periodic background health refresh ──────────────────────────────────
+    # Re-probes every 5 minutes so the cache never goes stale.  Avoids the
+    # "healthy at boot, dead 3 hours later" problem where a user picks a
+    # model the system thinks is healthy but is actually quota-exhausted.
+    refresh_interval = int(os.getenv("HEALTH_REFRESH_INTERVAL_SECONDS", "300"))
+
+    async def _periodic_refresh() -> None:
+        while True:
+            try:
+                await asyncio.sleep(refresh_interval)
+                logger.info("Running periodic LLM health refresh…")
+                fresh = await run_model_health_check(provider)
+                app.state.model_health = fresh
+                app.state.model_health_checked_at = datetime.now(timezone.utc).isoformat()
+                healthy = sum(1 for h in fresh.values() if h.get("status") == "ok")
+                logger.info("Periodic health refresh: %d/%d models healthy",
+                            healthy, len(fresh))
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("Periodic health refresh failed: %s", exc)
+
+    refresh_task = asyncio.create_task(_periodic_refresh())
+    app.state.health_refresh_task = refresh_task
 
     yield  # app runs here
 
     # Graceful shutdown
+    refresh_task.cancel()
+    try:
+        await refresh_task
+    except asyncio.CancelledError:
+        pass
     if getattr(app.state, "redis", None):
         await app.state.redis.aclose()
         logger.info("Redis connection closed")
