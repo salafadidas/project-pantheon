@@ -51,6 +51,60 @@ async def lifespan(app: FastAPI):
         logger.warning("Redis unavailable (%s) — session endpoints disabled", exc)
         app.state.redis = None
 
+    # ── Orphan recovery ────────────────────────────────────────────────────
+    # When the server restarts (crash or manual restart), any session whose
+    # asyncio task was still in-flight is left with status "running" in Redis
+    # forever.  Scan and mark them all "failed" so the UI / Telegram don't
+    # spin waiting on a task that no longer exists.
+    if app.state.redis is not None:
+        import json as _json
+        from datetime import datetime as _dt, timezone as _tz
+
+        orphan_count = 0
+        cursor = 0
+        while True:
+            cursor, keys = await app.state.redis.scan(
+                cursor, match="session:*", count=100
+            )
+            for key in keys:
+                # Skip event channels (session:<id>:events)
+                if key.count(":") != 1:
+                    continue
+                status = await app.state.redis.hget(key, "status")
+                if status == "running":
+                    now_iso = _dt.now(_tz.utc).isoformat()
+                    await app.state.redis.hset(
+                        key,
+                        mapping={
+                            "status": "failed",
+                            "final_report": (
+                                "⚠️ Session was interrupted when the server restarted. "
+                                "Please resubmit your task."
+                            ),
+                        },
+                    )
+                    # Notify any SSE/WebSocket subscribers still listening
+                    session_id = key.split(":", 1)[1]
+                    await app.state.redis.publish(
+                        f"session:{session_id}:events",
+                        _json.dumps({
+                            "event": "session_error",
+                            "error": "Server restarted — session interrupted. Please resubmit.",
+                            "timestamp": now_iso,
+                        }),
+                    )
+                    orphan_count += 1
+            if cursor == 0:
+                break
+
+        if orphan_count:
+            logger.warning(
+                "Orphan recovery: marked %d stale 'running' session(s) as failed",
+                orphan_count,
+            )
+        else:
+            logger.info("Orphan recovery: no stale sessions found")
+
     # ── Startup LLM health check ────────────────────────────────────────────
     # Probes every model with a tiny request so broken models are detected
     # automatically at boot, not discovered mid-session by the user.
