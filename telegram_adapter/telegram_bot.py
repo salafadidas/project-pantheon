@@ -228,6 +228,9 @@ class TelegramBot:
             CommandHandler("cancel", self.handle_cancel),
             MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message),
             MessageHandler(filters.PHOTO, self.handle_photo),
+            # Documents/files with a /submit caption start a Pantheon session.
+            # CommandHandler doesn't fire for document messages, so we need this.
+            MessageHandler(filters.Document.ALL, self.handle_document),
         ])
         app.add_error_handler(self.handle_error)
 
@@ -380,8 +383,9 @@ class TelegramBot:
             disable_web_page_preview=True,
         )
 
-        # Launch graph execution + phase watcher concurrently
-        asyncio.create_task(_run_session(session_id, task, user_id, self.redis))
+        # Launch graph execution + phase watcher concurrently.
+        # selected_models=[] → graph falls back to PHASE_MODEL_ROLES defaults.
+        asyncio.create_task(_run_session(session_id, task, user_id, self.redis, []))
         asyncio.create_task(
             self._watch_session(session_id, chat_id, context.application.bot)
         )
@@ -648,11 +652,104 @@ class TelegramBot:
         })
         await self.redis.expire(_session_key(session_id), SESSION_TTL)
 
-        asyncio.create_task(_run_session(session_id, task, user_id, self.redis))
+        asyncio.create_task(_run_session(session_id, task, user_id, self.redis, []))
         asyncio.create_task(self._watch_session(session_id, chat_id, context.application.bot))
 
         await update.message.reply_text(
             f"✅ 工作階段已建立！\nID：<code>{html.escape(session_id)}</code>\n\n"
+            f"使用 /status {html.escape(session_id)} 查詢進度。\n"
+            f"使用 /cancel {html.escape(session_id)} 取消工作階段。",
+            parse_mode="HTML",
+        )
+
+    async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle file/document uploads.
+
+        If the caption starts with /submit, download the file (text-based files
+        up to 500 KB are appended to the task text) and start a Pantheon session.
+        Otherwise, fall through to the general text handler.
+        """
+        caption = (update.message.caption or "").strip()
+
+        # Only handle /submit captions; ignore everything else
+        if not caption.lower().startswith("/submit"):
+            await update.message.reply_text(
+                "請使用 /submit <任務描述> 作為說明文字來提交任務。\n"
+                "例如：傳送文件時，在說明欄填入 /submit 分析這份文件"
+            )
+            return
+
+        # Task text = everything after "/submit"
+        task_text = caption[len("/submit"):].strip()
+
+        user_id = str(update.effective_user.id)
+        chat_id = update.effective_chat.id
+
+        if not self.redis:
+            await update.message.reply_text("Redis 無法連線，無法建立工作階段。")
+            return
+
+        # Download file if it's a readable text format (≤ 500 KB)
+        doc = update.message.document
+        file_content: str = ""
+        text_mimetypes = {
+            "text/plain", "text/markdown", "text/x-markdown",
+            "application/json", "text/csv", "text/html",
+        }
+        text_extensions = {".md", ".txt", ".json", ".csv", ".html", ".rst", ".yaml", ".yml"}
+        file_name = doc.file_name or ""
+        file_ext = "." + file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+        is_text = (
+            (doc.mime_type in text_mimetypes) or (file_ext in text_extensions)
+        ) and (doc.file_size or 0) <= 512_000  # 500 KB cap
+
+        await update.message.reply_text("📄 收到檔案，準備啟動 Pantheon 分析...")
+
+        if is_text:
+            try:
+                tg_file = await context.bot.get_file(doc.file_id)
+                raw: bytearray = await tg_file.download_as_bytearray()
+                file_content = raw.decode("utf-8", errors="replace")
+                logger.info("Document downloaded: %s (%d bytes)", file_name, len(raw))
+            except Exception as exc:
+                logger.warning("Failed to download document %s: %s", file_name, exc)
+
+        # Build the full task — combine caption task text + file content
+        if task_text and file_content:
+            task = f"{task_text}\n\n--- 附件：{file_name} ---\n{file_content}"
+        elif file_content:
+            task = f"--- 附件：{file_name} ---\n{file_content}"
+        elif task_text:
+            task = task_text
+        else:
+            await update.message.reply_text("請在說明欄填入任務描述。")
+            return
+
+        session_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        await self.redis.hset(
+            _session_key(session_id),
+            mapping={
+                "session_id": session_id,
+                "status": "running",
+                "phase": "routing",
+                "task": task,
+                "user_id": user_id,
+                "final_report": "",
+                "cost_summary": "{}",
+                "created_at": now,
+                "source": "document",
+            },
+        )
+        await self.redis.expire(_session_key(session_id), SESSION_TTL)
+
+        asyncio.create_task(_run_session(session_id, task, user_id, self.redis, []))
+        asyncio.create_task(self._watch_session(session_id, chat_id, context.application.bot))
+
+        file_note = f"（已讀取 {len(file_content):,} 字元）" if file_content else "（僅使用說明文字）"
+        await update.message.reply_text(
+            f"✅ 工作階段已建立！{file_note}\n"
+            f"ID：<code>{html.escape(session_id)}</code>\n\n"
             f"使用 /status {html.escape(session_id)} 查詢進度。\n"
             f"使用 /cancel {html.escape(session_id)} 取消工作階段。",
             parse_mode="HTML",

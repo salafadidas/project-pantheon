@@ -258,7 +258,7 @@ async def _drain_progress(session_id: str, channel: str, redis: Redis) -> None:
 
 
 async def _run_session(
-    session_id: str, task: str, user_id: str, redis: Redis, selected_models: list[str]
+    session_id: str, task: str, user_id: str, redis: Redis, selected_models: list[str] = []
 ) -> None:
     """Execute the Pantheon graph and stream events to Redis pub/sub.
 
