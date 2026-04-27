@@ -1,9 +1,19 @@
 """
 Telegram-specific bot implementation.
+
+NOTE on parse_mode:
+We use ``parse_mode="HTML"`` (not legacy ``"Markdown"``) for any reply that
+embeds user-controlled or external content (URLs, task text, model output).
+Legacy Markdown treats ``_``, ``*``, ``[``, and backtick as syntactic, so a pasted URL like
+``PLAN_v4_Master_2026-04-23.md`` triggers ``Can't parse entities: can't find
+end of the entity`` and the bot replies with a literal ``?``.  HTML mode only
+needs ``< > &`` escaped via :func:`html.escape`, which we apply to every
+interpolated value.
 """
 
 import asyncio
 import base64
+import html
 import json
 import logging
 import uuid
@@ -357,9 +367,17 @@ class TelegramBot:
         )
         await self.redis.expire(_session_key(session_id), SESSION_TTL)
 
+        # HTML mode + html.escape() so URLs/underscores/etc. in `task` don't
+        # break the parser (legacy Markdown treats _ as italic → entity error).
         await update.message.reply_text(
-            f"Session started!\nID: `{session_id}`\nTask: {task}\n\nUse /status {session_id} to check progress.",
-            parse_mode="Markdown",
+            (
+                f"Session started!\n"
+                f"ID: <code>{html.escape(session_id)}</code>\n"
+                f"Task: {html.escape(task)}\n\n"
+                f"Use /status {html.escape(session_id)} to check progress."
+            ),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
         )
 
         # Launch graph execution + phase watcher concurrently
@@ -382,7 +400,10 @@ class TelegramBot:
 
         session = await self.redis.hgetall(_session_key(session_id))
         if not session:
-            await update.message.reply_text(f"找不到工作階段 `{session_id}`，可能已過期或不存在。", parse_mode="Markdown")
+            await update.message.reply_text(
+                f"找不到工作階段 <code>{html.escape(session_id)}</code>，可能已過期或不存在。",
+                parse_mode="HTML",
+            )
             return
 
         status = session.get("status", "unknown")
@@ -411,24 +432,26 @@ class TelegramBot:
         task_preview = (task[:120] + "...") if len(task) > 120 else task
 
         lines = [
-            f"📋 工作階段 `{session_id[:8]}...`",
+            f"📋 工作階段 <code>{html.escape(session_id[:8])}...</code>",
             "",
-            f"{status_emoji} 狀態：{status}",
-            f"{phase_emoji} 階段：{phase}",
+            f"{status_emoji} 狀態：{html.escape(str(status))}",
+            f"{phase_emoji} 階段：{html.escape(str(phase))}",
             f"{source_label}{elapsed_text}",
             "",
-            f"📌 任務：{task_preview}",
+            f"📌 任務：{html.escape(task_preview)}",
             "",
-            f"🕐 建立時間：{created_at[:19] if created_at else '—'}",
+            f"🕐 建立時間：{html.escape(created_at[:19] if created_at else '—')}",
         ]
         if completed_at:
-            lines.append(f"🏁 完成時間：{completed_at[:19]}")
+            lines.append(f"🏁 完成時間：{html.escape(completed_at[:19])}")
         if error:
-            lines.append(f"⚠️ 錯誤：{error}")
+            lines.append(f"⚠️ 錯誤：{html.escape(str(error))}")
         if status == "complete":
-            lines.append(f"\n使用 /report {session_id} 取得完整報告。")
+            lines.append(f"\n使用 /report {html.escape(session_id)} 取得完整報告。")
 
-        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        await update.message.reply_text(
+            "\n".join(lines), parse_mode="HTML", disable_web_page_preview=True
+        )
 
     async def handle_report(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """/report <session_id> — Get the final report."""
@@ -454,8 +477,11 @@ class TelegramBot:
         report = session.get("final_report", "")
         # Telegram messages max 4096 chars
         if len(report) > 4000:
-            report = report[:4000] + "\n\n_(truncated)_"
-        await update.message.reply_text(report, parse_mode="Markdown")
+            report = report[:4000] + "\n\n(truncated)"
+        # LLM reports contain free-form Markdown that often has unbalanced
+        # ``*`` / ``_`` / ``[`` — render as plain text to avoid parser errors.
+        # The user gets the same content; only the styling is dropped.
+        await update.message.reply_text(report, disable_web_page_preview=True)
 
     async def handle_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """/cancel <session_id> — Cancel a running session."""
@@ -484,7 +510,10 @@ class TelegramBot:
             _events_channel(session_id),
             json.dumps({"event": "session_cancelled", "timestamp": datetime.now(timezone.utc).isoformat()}),
         )
-        await update.message.reply_text(f"Session `{session_id}` cancelled.", parse_mode="Markdown")
+        await update.message.reply_text(
+            f"Session <code>{html.escape(session_id)}</code> cancelled.",
+            parse_mode="HTML",
+        )
 
     async def _watch_session(self, session_id: str, chat_id: int, bot) -> None:
         """Subscribe to session events and forward phase updates to Telegram."""
@@ -517,13 +546,20 @@ class TelegramBot:
                 if event_type == "phase_complete":
                     phase = event.get("phase", "")
                     label = _PHASE_LABELS.get(phase, phase.title())
-                    await bot.send_message(chat_id=chat_id, text=f"✅ Phase complete: *{label}*", parse_mode="Markdown")
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=f"✅ Phase complete: <b>{html.escape(label)}</b>",
+                        parse_mode="HTML",
+                    )
 
                 elif event_type == "session_complete":
                     await bot.send_message(
                         chat_id=chat_id,
-                        text=f"🎉 Session `{session_id}` complete!\nUse /report {session_id} to get the full report.",
-                        parse_mode="Markdown",
+                        text=(
+                            f"🎉 Session <code>{html.escape(session_id)}</code> complete!\n"
+                            f"Use /report {html.escape(session_id)} to get the full report."
+                        ),
+                        parse_mode="HTML",
                     )
                     break
 
@@ -616,10 +652,10 @@ class TelegramBot:
         asyncio.create_task(self._watch_session(session_id, chat_id, context.application.bot))
 
         await update.message.reply_text(
-            f"✅ 工作階段已建立！\nID：`{session_id}`\n\n"
-            f"使用 /status {session_id} 查詢進度。\n"
-            f"使用 /cancel {session_id} 取消工作階段。",
-            parse_mode="Markdown",
+            f"✅ 工作階段已建立！\nID：<code>{html.escape(session_id)}</code>\n\n"
+            f"使用 /status {html.escape(session_id)} 查詢進度。\n"
+            f"使用 /cancel {html.escape(session_id)} 取消工作階段。",
+            parse_mode="HTML",
         )
 
     async def handle_error(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
