@@ -14,6 +14,7 @@ from langgraph.utils.config import get_store
 from db.postgres_utils import create_memory_store
 from agent.prompts import MEMORY_SYSTEM_PROMPT
 from llm.provider import LLMProvider
+from utils.message_utils import sanitize_messages
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ class AgentFactory:
             
             return [
                 {"role": "system", "content": MEMORY_SYSTEM_PROMPT.format(memory_content=memory_content)},
-                *state["messages"]
+                *sanitize_messages(state["messages"])
             ]
         
         # Use LiteLLM provider for model resolution (supports Claude, GPT, Gemini)

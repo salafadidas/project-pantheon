@@ -18,6 +18,8 @@ from typing import Any, Sequence
 
 from langchain_core.messages import BaseMessage
 
+from utils.message_utils import sanitize_messages
+
 logger = logging.getLogger(__name__)
 
 
@@ -181,7 +183,7 @@ async def ainvoke_with_fallback(
     for idx, candidate in enumerate(candidates):
         try:
             llm = provider.get_chat_model(candidate)
-            response = await llm.ainvoke(list(messages))
+            response = await llm.ainvoke(sanitize_messages(list(messages)))
             content: str = (
                 response.content if hasattr(response, "content") else str(response)
             )
@@ -223,7 +225,7 @@ async def ainvoke_with_fallback(
         for candidate in CROSS_PROVIDER_LAST_RESORT:
             try:
                 llm = provider.get_chat_model(candidate)
-                response = await llm.ainvoke(list(messages))
+                response = await llm.ainvoke(sanitize_messages(list(messages)))
                 content = (
                     response.content if hasattr(response, "content") else str(response)
                 )
