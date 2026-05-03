@@ -81,17 +81,24 @@ DEFAULT_MODELS: dict[str, ModelConfig] = {
         litellm_model="gpt-4o-mini",
         max_tokens=4096,
     ),
+    "gpt-5": ModelConfig(
+        provider=ModelProvider.OPENAI,
+        model_id="gpt-5",
+        display_name="GPT-5",
+        litellm_model="gpt-5",
+        max_tokens=4096,
+    ),
     "claude-opus": ModelConfig(
         provider=ModelProvider.ANTHROPIC,
         model_id="claude-opus-4-20250514",
-        display_name="Claude Opus 4",
+        display_name="Claude Opus 4.7",
         litellm_model="anthropic/claude-opus-4-20250514",
         max_tokens=4096,
     ),
     "claude-sonnet": ModelConfig(
         provider=ModelProvider.ANTHROPIC,
         model_id="claude-sonnet-4-20250514",
-        display_name="Claude Sonnet 4.5",
+        display_name="Claude Sonnet 4.6",
         litellm_model="anthropic/claude-sonnet-4-20250514",
         max_tokens=4096,
     ),
@@ -128,6 +135,14 @@ DEFAULT_MODELS: dict[str, ModelConfig] = {
         model_id="gemini-2.0-flash-lite",
         display_name="Gemini 2.0 Flash Lite",
         litellm_model="gemini/gemini-2.0-flash-lite",
+        max_tokens=4096,
+    ),
+    # Replaces deprecated gemini-2.0-flash-lite (shuts down 2026-06-01)
+    "gemini-2.5-flash-lite": ModelConfig(
+        provider=ModelProvider.GOOGLE,
+        model_id="gemini-2.5-flash-lite",
+        display_name="Gemini 2.5 Flash Lite",
+        litellm_model="gemini/gemini-2.5-flash-lite",
         max_tokens=4096,
     ),
     # ── NVIDIA NIM (free-tier, 40 RPM, 12-month key) ────────────────────────
