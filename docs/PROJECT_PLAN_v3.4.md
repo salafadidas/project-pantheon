@@ -1,13 +1,13 @@
 ---
 title: Project Pantheon — Master Implementation Plan
-version: v3.3
-date: 2026-04-14
-status: Stage 1 (PoC) COMPLETE — tagged v0.1.0-poc; CI green
+version: v3.4
+date: 2026-05-03
+status: Stage 1 (PoC) COMPLETE — tagged v0.1.0-poc; production-grade hardening landed; ready to start Stage 2
 ---
 
 # Project Pantheon — Master Implementation Plan
 
-> **Current file: `PROJECT_PLAN_v3.3.md`** — For NotebookLM: always upload the highest-numbered file. Check `version:` on line 3 and the filename to confirm currency.
+> **Current file: `PROJECT_PLAN_v3.4.md`** — For NotebookLM: always upload the highest-numbered file. Check `version:` on line 3 and the filename to confirm currency.
 
 ---
 
@@ -32,7 +32,9 @@ Project Pantheon is a cross-engine multi-agent collaboration system where multip
 
 ## 2. Current Progress Snapshot
 
-> Last updated: 2026-04-01 | **Stage 1 PoC — ALL 10 DAYS COMPLETE** ✅ Tagged `v0.1.0-poc`
+> Last updated: 2026-05-03 | **Stage 1 PoC COMPLETE** ✅ + **Production-grade hardening shipped post-PoC**
+
+### 2a. Stage 1 PoC Components (tagged `v0.1.0-poc`)
 
 | Component | Files | Status |
 |-----------|-------|--------|
@@ -49,6 +51,27 @@ Project Pantheon is a cross-engine multi-agent collaboration system where multip
 | Health endpoint + demo script | `api/v1/health.py`, `scripts/demo.py` | ✅ Complete |
 | CI/CD pipeline | `.github/workflows/ci.yml` | ✅ Complete |
 | Handover docs | `docs/DEMO_SCRIPT.md`, `docs/HANDOVER.md` | ✅ Complete |
+
+### 2b. Post-PoC Production-Grade Hardening (un-tagged, between `v0.1.0-poc` and `HEAD`)
+
+> 14 commits delivered between 2026-04-01 and 2026-05-03 that push the PoC well into production-grade territory. To be tagged as `v0.2.0-streaming`.
+
+| Feature | Files | Commit | Status |
+|---------|-------|--------|--------|
+| Sanitize empty text blocks before Anthropic API | `utils/message_utils.py`, `agent/agent_factory.py`, `llm/quota_fallback.py` | `48bf7b4` | ✅ Done |
+| Telegram document handler + missing `selected_models` arg fix | `telegram_adapter/telegram_bot.py`, `api/v1/sessions.py` | `9b0aec0` | ✅ Done |
+| Orphan session recovery on server restart | `main.py` (lifespan scan) | `efd6793` | ✅ Done |
+| Telegram reply parse_mode Markdown→HTML (URL underscore safe) | `telegram_adapter/telegram_bot.py` | `b3e82c2` | ✅ Done |
+| Health-aware model selection — UI filters unhealthy models | `frontend/components/ModelSelector.tsx`, `frontend/pages/api/health/refresh.ts`, `api/v1/sessions.py` | `0a0fdc1` | ✅ Done |
+| 504 / timeout treated as transient quota error | `llm/quota_fallback.py` | `3e44ea1` | ✅ Done |
+| Robust LLM quota fallback + startup health check | `llm/quota_fallback.py`, `llm/health_check.py`, `main.py` | `85fb918` | ✅ Done |
+| Markdown rendering of final report + Gemini 503 quota handling | `frontend/components/`, `llm/quota_fallback.py` | `78b65ce` | ✅ Done |
+| Real-time streaming + debate UI dedup + quota fallback | `api/v1/websocket.py`, `frontend/components/DiscussionThread.tsx`, `llm/quota_fallback.py` | `b8d748a` | ✅ Done |
+| Model selector UI with pricing + Python 3.9 type-hint compat | `frontend/components/ModelSelector.tsx`, `llm/model_catalog.py`, `api/v1/models.py` | `64a1a30` | ✅ Done |
+| Chinese prompts + photo support + 中文化 status + dotenv override | `graph/nodes/*.py`, `telegram_adapter/telegram_bot.py`, `main.py` | `5abca27` | ✅ Done |
+| NotebookLM auto-upload via macOS launchd (5-min interval) | `scripts/upload_notebooklm.mjs`, `scripts/package.json`, launchd plist | `a3f3a9b` | ✅ Done |
+| Version-comparison report + macOS notification on NotebookLM upload | `scripts/upload_notebooklm.mjs` | `8e4cb09` | ✅ Done |
+| Event-driven NotebookLM sync (WatchPaths, not interval polling) | launchd plist | `f980eca` | ✅ Done |
 
 ---
 
@@ -92,16 +115,23 @@ Project Pantheon is a cross-engine multi-agent collaboration system where multip
 
 **Goal:** Production-ready, scalable, full monitoring + UI. Decision gate: after Stage 1 tag.
 
-**Scope (to be detailed in Stage 2 sprint plan):**
-- Cloud deployment (target: TBD — AWS / GCP / self-hosted)
-- Authentication layer (API keys or OAuth)
-- Full observability: structured metrics (Prometheus/Grafana), distributed tracing
+**Scope (detailed sprint plan: see `PROJECT_PLAN_v4.0.md`):**
+- Cloud deployment (target: GCP Cloud Run + Memorystore — see v4.0 §3)
+- Authentication layer (API keys + Google OAuth)
+- Full observability: Prometheus + Grafana + OpenTelemetry traces
 - Multi-tenant session isolation and rate limiting
 - Performance testing and SLA definition
 - Production-grade frontend (user accounts, session history)
 - Automated backups and disaster recovery
 
-**Status: Not yet started** — detailed sprint plan to be written after `v0.1.0-poc` tag.
+**Status: Sprint plan drafted (`PROJECT_PLAN_v4.0.md`); implementation pending kickoff.**
+
+**Pre-work already completed (counted in §2b above):**
+- Quota fallback, startup health check, periodic re-probe
+- Health-aware model selector UI
+- Orphan session recovery on restart
+- Real-time WebSocket streaming with debate dedup
+- NotebookLM doc-sync pipeline (event-driven launchd)
 
 ---
 
@@ -219,12 +249,13 @@ project-pantheon/
 
 ## 7. Open Questions / Decision Log
 
-| Question | Status |
-|----------|--------|
-| Stage 2 cloud target (AWS / GCP / self-hosted) | TBD — decide at Stage 1 completion |
-| Authentication strategy for Stage 2 API | TBD |
-| Stage 3 Eigent integration — proceed or skip | Decision gate after Stage 2 |
-| Frontend framework for Stage 2 (keep Next.js or migrate) | TBD |
+| Question | Status | Decision |
+|----------|--------|----------|
+| Stage 2 cloud target (AWS / GCP / self-hosted) | ✅ Decided 2026-05-03 | **GCP Cloud Run + Memorystore (Redis) + Cloud SQL (Postgres)** |
+| Authentication strategy for Stage 2 API | ✅ Decided 2026-05-03 | **API Key (server-to-server) + Google OAuth (browser)** |
+| Frontend framework for Stage 2 (keep Next.js or migrate) | ✅ Decided 2026-05-03 | **Keep Next.js**, add NextAuth |
+| Stage 3 Eigent integration — proceed or skip | ⏳ Decision gate after Stage 2 | TBD |
+| Model catalog price refresh cadence | ✅ Weekly (Mondays 09:00 Asia/Taipei) | Diff requires user approval; never auto-write |
 
 ---
 
@@ -246,3 +277,4 @@ project-pantheon/
 | v3.1 | 2026-04-13 | Sonnet 4.6 | CI fix — structlog PrintLoggerFactory → stdlib.LoggerFactory; explicit setLevel() for root logger; all 86 tests green |
 | v3.2 | 2026-04-13 | Sonnet 4.6 | NotebookLM account migrated: susynoid09@gmail.com → salafadidas@gmail.com; account recorded in plan §6 and CLAUDE.md |
 | v3.3 | 2026-04-14 | Sonnet 4.6 | CLAUDE.md: added Error Prevention standards (capability investigation protocol, forbidden anti-patterns) and CLAUDE.md Update Policy |
+| v3.4 | 2026-05-03 | Sonnet 4.6 | **Plan caught up with code** — added §2b documenting 14 post-PoC commits (sanitize_messages, orphan recovery, health gating, streaming UI, quota fallback, NotebookLM sync); resolved 3 of 4 Stage 2 TBDs (GCP / API Key+OAuth / keep Next.js); references new sprint plan `PROJECT_PLAN_v4.0.md` |
