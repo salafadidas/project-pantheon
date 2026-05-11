@@ -14,6 +14,7 @@ import os
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from graph.state import PantheonState
+from llm.cost_tracker import merge_usage
 from llm.provider import PHASE_MODEL_ROLES, LLMProvider
 from llm.quota_fallback import ainvoke_with_fallback
 
@@ -96,14 +97,33 @@ def _format_cost(cost_summary: dict) -> str:
     if not cost_summary:
         return "N/A"
     lines: list[str] = []
-    if "total_cost_usd" in cost_summary:
-        lines.append(f"- **Total cost**: ${cost_summary['total_cost_usd']:.4f}")
+    total_usd = cost_summary.get("total_cost_usd", 0.0)
+    total_in = cost_summary.get("total_input_tokens", 0)
+    total_out = cost_summary.get("total_output_tokens", 0)
+    lines.append(
+        f"- 總費用：${total_usd:.4f} USD"
+        f"（輸入 {total_in:,} tokens，輸出 {total_out:,} tokens）"
+    )
     if "by_model" in cost_summary:
-        for model, cost in cost_summary["by_model"].items():
-            lines.append(f"  - {model}: ${cost:.4f}")
+        lines.append("\n各模型明細：")
+        for model, data in cost_summary["by_model"].items():
+            if isinstance(data, dict):
+                lines.append(
+                    f"  - {model}：${data.get('cost_usd', 0):.4f}"
+                    f"（in {data.get('input_tokens', 0):,} / out {data.get('output_tokens', 0):,}）"
+                )
+            else:
+                lines.append(f"  - {model}：${data:.4f}")
     if "by_phase" in cost_summary:
-        for phase, cost in cost_summary["by_phase"].items():
-            lines.append(f"  - Phase {phase}: ${cost:.4f}")
+        lines.append("\n各階段費用：")
+        for phase, data in cost_summary["by_phase"].items():
+            if isinstance(data, dict):
+                lines.append(
+                    f"  - {phase}：${data.get('cost_usd', 0):.4f}"
+                    f"（in {data.get('input_tokens', 0):,} / out {data.get('output_tokens', 0):,}）"
+                )
+            else:
+                lines.append(f"  - {phase}：${data:.4f}")
     return "\n".join(lines) if lines else "N/A"
 
 
@@ -139,9 +159,11 @@ async def synthesizer_node(state: PantheonState) -> PantheonState:
         "請現在撰寫最終報告。"
     )
 
+    cost_summary: dict = dict(state.get("cost_summary") or {})
+
     final_report: str
     try:
-        actual_model, content = await ainvoke_with_fallback(
+        actual_model, content, usage = await ainvoke_with_fallback(
             provider=provider,
             model_key=pm_model_key,
             messages=[
@@ -152,6 +174,15 @@ async def synthesizer_node(state: PantheonState) -> PantheonState:
             # Claude Haiku / GPT-4o-mini if the primary provider is exhausted.
             allow_cross_provider=True,
         )
+        if usage.get("input_tokens") or usage.get("output_tokens"):
+            cost_summary = merge_usage(
+                cost_summary,
+                model_key=actual_model,
+                litellm_model=usage["litellm_model"],
+                phase="synthesis",
+                input_tokens=usage["input_tokens"],
+                output_tokens=usage["output_tokens"],
+            )
         final_report = content
         logger.info(
             "Synthesizer complete: %d chars in final report (model=%s)",
@@ -171,5 +202,6 @@ async def synthesizer_node(state: PantheonState) -> PantheonState:
     return {
         **state,
         "final_report": final_report,
+        "cost_summary": cost_summary,
         "phase": "complete",
     }

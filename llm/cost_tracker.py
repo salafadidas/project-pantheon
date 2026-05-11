@@ -237,3 +237,61 @@ def _calculate_cost(model: str, tokens_in: int, tokens_out: int) -> float:
     except Exception:
         logger.debug("Cost calculation not available for model=%s, returning 0", model)
         return 0.0
+
+
+def merge_usage(
+    existing: dict,
+    *,
+    model_key: str,
+    litellm_model: str,
+    phase: str,
+    input_tokens: int,
+    output_tokens: int,
+) -> dict:
+    """Merge one LLM call's usage into the accumulated cost_summary dict.
+
+    Pure function — returns a new dict, never mutates ``existing``.
+    Designed for the LangGraph last-write-wins state pattern: each node calls
+    this once per LLM call and returns the updated dict as part of its state.
+
+    Structure of the returned dict::
+
+        {
+            "by_model": {
+                "claude-sonnet": {"input_tokens": 1500, "output_tokens": 800, "cost_usd": 0.016},
+                ...
+            },
+            "by_phase": {
+                "research": {"input_tokens": 4500, "output_tokens": 2400, "cost_usd": 0.048},
+                ...
+            },
+            "total_input_tokens": 6000,
+            "total_output_tokens": 3200,
+            "total_cost_usd": 0.064,
+        }
+    """
+    cost = _calculate_cost(litellm_model, input_tokens, output_tokens)
+
+    result = dict(existing) if existing else {}
+
+    by_model: dict = {k: dict(v) for k, v in result.get("by_model", {}).items()}
+    entry = dict(by_model.get(model_key, {}))
+    entry["input_tokens"] = entry.get("input_tokens", 0) + input_tokens
+    entry["output_tokens"] = entry.get("output_tokens", 0) + output_tokens
+    entry["cost_usd"] = round(entry.get("cost_usd", 0.0) + cost, 6)
+    by_model[model_key] = entry
+
+    by_phase: dict = {k: dict(v) for k, v in result.get("by_phase", {}).items()}
+    phase_entry = dict(by_phase.get(phase, {}))
+    phase_entry["input_tokens"] = phase_entry.get("input_tokens", 0) + input_tokens
+    phase_entry["output_tokens"] = phase_entry.get("output_tokens", 0) + output_tokens
+    phase_entry["cost_usd"] = round(phase_entry.get("cost_usd", 0.0) + cost, 6)
+    by_phase[phase] = phase_entry
+
+    result["by_model"] = by_model
+    result["by_phase"] = by_phase
+    result["total_input_tokens"] = result.get("total_input_tokens", 0) + input_tokens
+    result["total_output_tokens"] = result.get("total_output_tokens", 0) + output_tokens
+    result["total_cost_usd"] = round(result.get("total_cost_usd", 0.0) + cost, 6)
+
+    return result
