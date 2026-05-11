@@ -18,6 +18,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from graph.progress import publish_progress
 from graph.state import PantheonState
+from llm.cost_tracker import merge_usage
 from llm.provider import LLMProvider, PHASE_MODEL_ROLES
 from llm.quota_fallback import ProviderQuotaExhausted, ainvoke_with_fallback
 from utils.timeout import with_timeout, TimeoutError as PantheonTimeoutError
@@ -66,6 +67,7 @@ async def debate_node(state: PantheonState) -> PantheonState:
 
     history_snapshot = list(state.get("debate_history", []))
     new_entries: list[dict] = []
+    cost_summary: dict = dict(state.get("cost_summary") or {})
 
     session_id: str = state.get("session_id", "")
 
@@ -82,7 +84,17 @@ async def debate_node(state: PantheonState) -> PantheonState:
                 seconds=float(DEBATE_TIMEOUT_SECONDS),
                 label=f"debater:{model_key}",
             )
+            usage = entry.pop("usage", {})
             new_entries.append(entry)
+            if usage.get("input_tokens") or usage.get("output_tokens"):
+                cost_summary = merge_usage(
+                    cost_summary,
+                    model_key=entry["model"],
+                    litellm_model=usage["litellm_model"],
+                    phase="debate",
+                    input_tokens=usage["input_tokens"],
+                    output_tokens=usage["output_tokens"],
+                )
             logger.info("Debate round %d: %s responded (%d chars)",
                         current_round, model_key, len(entry["content"]))
             await publish_progress(session_id, {
@@ -176,6 +188,7 @@ async def debate_node(state: PantheonState) -> PantheonState:
         **state,
         "debate_history": history_snapshot + new_entries,
         "debate_round": current_round,
+        "cost_summary": cost_summary,
         "phase": "debate",
     }
 
@@ -205,7 +218,7 @@ async def _get_model_statement(
         )),
     ]
 
-    actual_model, content = await ainvoke_with_fallback(
+    actual_model, content, usage = await ainvoke_with_fallback(
         provider=provider,
         model_key=model_key,
         messages=messages,
@@ -219,6 +232,7 @@ async def _get_model_statement(
         "model_requested": model_key if actual_model != model_key else None,
         "content": content,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "usage": usage,
     }
 
 

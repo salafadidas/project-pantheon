@@ -16,6 +16,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from graph.progress import publish_progress
 from graph.state import PantheonState
+from llm.cost_tracker import merge_usage
 from llm.provider import PHASE_MODEL_ROLES, LLMProvider
 from llm.quota_fallback import ProviderQuotaExhausted, ainvoke_with_fallback
 from utils.logging_config import get_logger
@@ -63,17 +64,30 @@ async def researcher_node(state: PantheonState) -> PantheonState:
         for model_key in researcher_models
     ]
 
-    results_list: list[tuple[str, str]] = await asyncio.gather(*tasks)
-    research_results: dict[str, str] = dict(results_list)
+    results_list: list[tuple[str, str, dict]] = await asyncio.gather(*tasks)
+    research_results: dict[str, str] = {model_key: text for model_key, text, _ in results_list}
+
+    cost_summary: dict = dict(state.get("cost_summary") or {})
+    for model_key, _text, usage in results_list:
+        if usage.get("input_tokens") or usage.get("output_tokens"):
+            cost_summary = merge_usage(
+                cost_summary,
+                model_key=model_key,
+                litellm_model=usage["litellm_model"],
+                phase="research",
+                input_tokens=usage["input_tokens"],
+                output_tokens=usage["output_tokens"],
+            )
 
     logger.info(
         "Research phase complete: %d models responded",
-        sum(1 for _, v in results_list if not v.startswith("[ERROR")),
+        sum(1 for _, v, _ in results_list if not v.startswith("[ERROR")),
     )
 
     return {
         **state,
         "research_results": research_results,
+        "cost_summary": cost_summary,
         "phase": "debate",
     }
 
@@ -85,12 +99,13 @@ async def _research_with_timeout(
     task: str,
     timeout: int,
     session_id: str = "",
-) -> tuple[str, str]:
+) -> tuple[str, str, dict]:
     """Call a single researcher model, enforcing a timeout.
 
     Returns:
-        (model_key, research_text) — on failure, research_text is an error
-        placeholder so downstream nodes always have an entry for every model.
+        (model_key, research_text, usage) — on failure, research_text is an
+        error placeholder and usage is empty so downstream nodes always have an
+        entry for every model.
     """
     from datetime import datetime, timezone  # local import to avoid circular at module level
 
@@ -105,32 +120,33 @@ async def _research_with_timeout(
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
+    _empty_usage: dict = {"input_tokens": 0, "output_tokens": 0, "litellm_model": ""}
     try:
-        result = await with_timeout(
+        result, usage = await with_timeout(
             _get_research(provider=provider, model_key=model_key, task=task),
             seconds=float(timeout),
             label=f"researcher:{model_key}",
         )
         logger.info("researcher_done", model=model_key, chars=len(result))
         await _publish(result, skipped=False)
-        return model_key, result
+        return model_key, result, usage
     except PantheonTimeoutError:
         logger.warning("researcher_timeout", model=model_key, timeout_s=timeout)
         content = f"⚠️ {model_key} timed out after {timeout}s — skipped."
         await _publish(content, skipped=True)
-        return model_key, content
+        return model_key, content, _empty_usage
     except ProviderQuotaExhausted as exc:
         # Clean, user-friendly message — the str() of the exception is already
         # formatted for the UI by quota_fallback.py
         logger.warning("researcher_quota_exhausted", model=model_key, detail=str(exc))
         content = str(exc)
         await _publish(content, skipped=True)
-        return model_key, content
+        return model_key, content, _empty_usage
     except Exception as exc:
         logger.warning("researcher_error", model=model_key, error=str(exc))
         content = f"⚠️ {model_key} encountered an error and was skipped."
         await _publish(content, skipped=True)
-        return model_key, content
+        return model_key, content, _empty_usage
 
 
 async def _get_research(
@@ -138,8 +154,8 @@ async def _get_research(
     provider: LLMProvider,
     model_key: str,
     task: str,
-) -> str:
-    """Invoke the model and return its research text.
+) -> tuple[str, dict]:
+    """Invoke the model and return (research_text, usage).
 
     Automatically falls back to cheaper models within the same provider when a
     quota / rate-limit error (429) is encountered.
@@ -154,7 +170,7 @@ async def _get_research(
         ),
     ]
 
-    actual_model, content = await ainvoke_with_fallback(
+    actual_model, content, usage = await ainvoke_with_fallback(
         provider=provider,
         model_key=model_key,
         messages=messages,
@@ -168,7 +184,7 @@ async def _get_research(
             model_key,
         )
 
-    return content
+    return content, usage
 
 
 def _resolve_researcher_models(provider: LLMProvider, state: PantheonState) -> list[str]:

@@ -18,6 +18,7 @@ from typing import Any, Sequence
 
 from langchain_core.messages import BaseMessage
 
+from llm.cost_tracker import _extract_token_counts
 from utils.message_utils import sanitize_messages
 
 logger = logging.getLogger(__name__)
@@ -154,7 +155,7 @@ async def ainvoke_with_fallback(
     model_key: str,
     messages: Sequence[BaseMessage],
     allow_cross_provider: bool = False,
-) -> tuple[str, str]:
+) -> tuple[str, str, dict]:
     """Invoke a model, falling back on quota errors.
 
     Args:
@@ -167,8 +168,9 @@ async def ainvoke_with_fallback(
             output (synthesizer).
 
     Returns:
-        ``(actual_model_key, content)`` — *actual_model_key* may differ from
-        *model_key* when a fallback was used.
+        ``(actual_model_key, content, usage)`` — *actual_model_key* may differ
+        from *model_key* when a fallback was used.  *usage* is a dict with
+        ``{"input_tokens": int, "output_tokens": int, "litellm_model": str}``.
 
     Raises:
         :class:`ProviderQuotaExhausted`: When every candidate is
@@ -187,13 +189,20 @@ async def ainvoke_with_fallback(
             content: str = (
                 response.content if hasattr(response, "content") else str(response)
             )
+            input_tokens, output_tokens = _extract_token_counts(response)
+            litellm_model: str = provider.get_model_config(candidate).litellm_model
+            usage = {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "litellm_model": litellm_model,
+            }
             if candidate != model_key:
                 logger.warning(
                     "quota_fallback: %s → %s (quota exceeded on primary)",
                     model_key,
                     candidate,
                 )
-            return candidate, content.strip()
+            return candidate, content.strip(), usage
 
         except Exception as exc:
             if _is_quota_error(exc):
@@ -229,12 +238,19 @@ async def ainvoke_with_fallback(
                 content = (
                     response.content if hasattr(response, "content") else str(response)
                 )
+                input_tokens, output_tokens = _extract_token_counts(response)
+                litellm_model = provider.get_model_config(candidate).litellm_model
+                usage = {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "litellm_model": litellm_model,
+                }
                 logger.warning(
                     "quota_fallback: all %s models exhausted — used cross-provider %s",
                     model_key,
                     candidate,
                 )
-                return candidate, content.strip()
+                return candidate, content.strip(), usage
             except Exception as exc:
                 if _is_quota_error(exc):
                     logger.warning(

@@ -17,6 +17,7 @@ from typing import List
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from graph.state import PantheonState
+from llm.cost_tracker import merge_usage
 from llm.provider import PHASE_MODEL_ROLES, LLMProvider
 from llm.quota_fallback import ProviderQuotaExhausted, ainvoke_with_fallback
 
@@ -71,8 +72,20 @@ async def voter_node(state: PantheonState) -> PantheonState:
         for model_key in voter_models
     ]
 
-    results: list[tuple[str, str]] = await asyncio.gather(*tasks)
-    votes: dict[str, str] = {model: vote for model, vote in results}
+    results: list[tuple[str, str, dict]] = await asyncio.gather(*tasks)
+    votes: dict[str, str] = {model: vote for model, vote, _ in results}
+
+    cost_summary: dict = dict(state.get("cost_summary") or {})
+    for model_key, _vote, usage in results:
+        if usage.get("input_tokens") or usage.get("output_tokens"):
+            cost_summary = merge_usage(
+                cost_summary,
+                model_key=model_key,
+                litellm_model=usage["litellm_model"],
+                phase="voting",
+                input_tokens=usage["input_tokens"],
+                output_tokens=usage["output_tokens"],
+            )
 
     consensus = _calculate_consensus(votes)
     logger.info(
@@ -85,6 +98,7 @@ async def voter_node(state: PantheonState) -> PantheonState:
         **state,
         "votes": votes,
         "consensus": consensus,
+        "cost_summary": cost_summary,
         "phase": "synthesis",
     }
 
@@ -96,14 +110,15 @@ async def _vote_with_timeout(
     task: str,
     debate_transcript: str,
     timeout: int,
-) -> tuple[str, str]:
+) -> tuple[str, str, dict]:
     """Cast one vote with a timeout guard.
 
     Returns:
-        (model_key, vote_label) — placeholder on failure.
+        (model_key, vote_label, usage) — placeholder on failure.
     """
+    _empty_usage: dict = {"input_tokens": 0, "output_tokens": 0, "litellm_model": ""}
     try:
-        vote = await asyncio.wait_for(
+        vote, usage = await asyncio.wait_for(
             _cast_vote(
                 provider=provider,
                 model_key=model_key,
@@ -113,16 +128,16 @@ async def _vote_with_timeout(
             timeout=float(timeout),
         )
         logger.info("Voter %s: %s", model_key, vote)
-        return model_key, vote
+        return model_key, vote, usage
     except asyncio.TimeoutError:
         logger.warning("Voter %s timed out after %ds", model_key, timeout)
-        return model_key, "[TIMEOUT]"
+        return model_key, "[TIMEOUT]", _empty_usage
     except ProviderQuotaExhausted:
         logger.warning("Voter %s: quota exhausted — skipping vote", model_key)
-        return model_key, "[QUOTA]"
+        return model_key, "[QUOTA]", _empty_usage
     except Exception as exc:
         logger.warning("Voter %s failed: %s", model_key, exc)
-        return model_key, "[ERROR]"
+        return model_key, "[ERROR]", _empty_usage
 
 
 async def _cast_vote(
@@ -131,8 +146,8 @@ async def _cast_vote(
     model_key: str,
     task: str,
     debate_transcript: str,
-) -> str:
-    """Invoke a single model to cast its vote and return the extracted label."""
+) -> tuple[str, dict]:
+    """Invoke a single model to cast its vote and return (vote_label, usage)."""
     messages = [
         SystemMessage(content=_SYSTEM_PROMPT),
         HumanMessage(
@@ -144,7 +159,7 @@ async def _cast_vote(
         ),
     ]
 
-    _actual_model, raw = await ainvoke_with_fallback(
+    _actual_model, raw, usage = await ainvoke_with_fallback(
         provider=provider,
         model_key=model_key,
         messages=messages,
@@ -153,14 +168,14 @@ async def _cast_vote(
     # Extract the VOTE: label from the response
     for line in raw.splitlines():
         if line.strip().upper().startswith("VOTE:"):
-            return line.split(":", 1)[1].strip()
+            return line.split(":", 1)[1].strip(), usage
 
     # Fallback: return first non-empty line
     for line in raw.splitlines():
         if line.strip():
-            return line.strip()[:80]
+            return line.strip()[:80], usage
 
-    return raw.strip()[:80]
+    return raw.strip()[:80], usage
 
 
 def _calculate_consensus(votes: dict[str, str]) -> str | None:

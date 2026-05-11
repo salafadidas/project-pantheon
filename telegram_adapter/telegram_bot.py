@@ -221,6 +221,7 @@ class TelegramBot:
         app.add_handlers([
             CommandHandler("start", self.handle_start),
             CommandHandler("help", self.handle_help),
+            CommandHandler("ping", self.handle_ping),
             CommandHandler("reset", self.handle_reset),
             CommandHandler("submit", self.handle_submit),
             CommandHandler("status", self.handle_status),
@@ -284,6 +285,20 @@ class TelegramBot:
         if agent_manager:
             await agent_manager.shutdown()
             logger.info("Agent manager shut down")
+
+    async def handle_ping(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """/ping — Check bot + Redis health."""
+        redis_ok = False
+        try:
+            if self.redis:
+                await self.redis.ping()
+                redis_ok = True
+        except Exception:
+            pass
+        redis_status = "✅ 正常" if redis_ok else "❌ 離線"
+        await update.message.reply_text(
+            f"🤖 Bot: ✅ 運行中\n🗄️ Redis: {redis_status}"
+        )
 
     async def handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command"""
@@ -355,20 +370,27 @@ class TelegramBot:
 
         session_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
-        await self.redis.hset(
-            _session_key(session_id),
-            mapping={
-                "session_id": session_id,
-                "status": "running",
-                "phase": "routing",
-                "task": task,
-                "user_id": user_id,
-                "final_report": "",
-                "cost_summary": "{}",
-                "created_at": now,
-            },
-        )
-        await self.redis.expire(_session_key(session_id), SESSION_TTL)
+        try:
+            await self.redis.hset(
+                _session_key(session_id),
+                mapping={
+                    "session_id": session_id,
+                    "status": "running",
+                    "phase": "routing",
+                    "task": task,
+                    "user_id": user_id,
+                    "final_report": "",
+                    "cost_summary": "{}",
+                    "created_at": now,
+                },
+            )
+            await self.redis.expire(_session_key(session_id), SESSION_TTL)
+        except Exception as exc:
+            logger.error("handle_submit: Redis error for session %s: %s", session_id, exc)
+            await update.message.reply_text(
+                "❌ 無法建立工作階段（Redis 連線失敗），請稍後再試。"
+            )
+            return
 
         # HTML mode + html.escape() so URLs/underscores/etc. in `task` don't
         # break the parser (legacy Markdown treats _ as italic → entity error).
@@ -640,17 +662,24 @@ class TelegramBot:
 
         session_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
-        await self.redis.hset(_session_key(session_id), mapping={
-            "session_id": session_id,
-            "user_id": user_id,
-            "chat_id": str(chat_id),
-            "task": task,
-            "status": "running",
-            "phase": "routing",
-            "created_at": now,
-            "source": "photo",
-        })
-        await self.redis.expire(_session_key(session_id), SESSION_TTL)
+        try:
+            await self.redis.hset(_session_key(session_id), mapping={
+                "session_id": session_id,
+                "user_id": user_id,
+                "chat_id": str(chat_id),
+                "task": task,
+                "status": "running",
+                "phase": "routing",
+                "created_at": now,
+                "source": "photo",
+            })
+            await self.redis.expire(_session_key(session_id), SESSION_TTL)
+        except Exception as exc:
+            logger.error("handle_photo: Redis error for session %s: %s", session_id, exc)
+            await update.message.reply_text(
+                "❌ 無法建立工作階段（Redis 連線失敗），請稍後再試。"
+            )
+            return
 
         asyncio.create_task(_run_session(session_id, task, user_id, self.redis, []))
         asyncio.create_task(self._watch_session(session_id, chat_id, context.application.bot))
@@ -727,21 +756,28 @@ class TelegramBot:
 
         session_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
-        await self.redis.hset(
-            _session_key(session_id),
-            mapping={
-                "session_id": session_id,
-                "status": "running",
-                "phase": "routing",
-                "task": task,
-                "user_id": user_id,
-                "final_report": "",
-                "cost_summary": "{}",
-                "created_at": now,
-                "source": "document",
-            },
-        )
-        await self.redis.expire(_session_key(session_id), SESSION_TTL)
+        try:
+            await self.redis.hset(
+                _session_key(session_id),
+                mapping={
+                    "session_id": session_id,
+                    "status": "running",
+                    "phase": "routing",
+                    "task": task,
+                    "user_id": user_id,
+                    "final_report": "",
+                    "cost_summary": "{}",
+                    "created_at": now,
+                    "source": "document",
+                },
+            )
+            await self.redis.expire(_session_key(session_id), SESSION_TTL)
+        except Exception as exc:
+            logger.error("handle_document: Redis error for session %s: %s", session_id, exc)
+            await update.message.reply_text(
+                "❌ 無法建立工作階段（Redis 連線失敗），請稍後再試。"
+            )
+            return
 
         asyncio.create_task(_run_session(session_id, task, user_id, self.redis, []))
         asyncio.create_task(self._watch_session(session_id, chat_id, context.application.bot))
