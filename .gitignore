@@ -1,4 +1,10 @@
 .env
+.DS_Store
+._*
+.worktrees/
+.coverage
+.venv/
+.claude/
 venv/
 __pycache__/
 .gitnexus
