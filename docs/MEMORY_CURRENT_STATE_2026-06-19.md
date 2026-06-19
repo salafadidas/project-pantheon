@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-19
 **Sprint**: Sprint 0 (Memory Layer Assessment)
-**Status**: Draft (Claude-generated code_ref + cmd; verification_result pending local execution)
+**Status**: Step 1 in progress — 8/12 rows verified; 2 rows need live bot session (Row 3, Row 7); 1 doc-only (Row 4); 1 doc-only deferred (Row 10, 12)
 **Parent**: `docs/PROJECT_PLAN_v4.4.md` §4 Sprint 0 Step 1
 **Companion**: `docs/SPRINT0_RUNBOOK.md` (local execution guide)
 
@@ -41,7 +41,7 @@ While locating `code_ref` line numbers for this draft, three things in v4.4 plan
 | Field | Content |
 |-------|---------|
 | **code_ref** | `.mcp.json:13` |
-| **verification_result** | ⏳ pending — run locally:<br>```bash<br>cat .mcp.json \| python -m json.tool<br>grep -r "openmemory" --include="*.py" .<br>```<br>**Expected if dev-only (assumption holds)**: `.mcp.json` shows `openmemory` entry; `grep` returns 0 Python references.<br>**Expected if production-coupled (assumption broken)**: `grep` returns Python files importing or calling openmemory.<br>**Your output**:<br>```<br>[paste grep output here]<br>```<br>**Verdict**: ☐ dev-only confirmed / ☐ production-coupled (escalate) |
+| **verification_result** | ✅ **dev-only confirmed** (2026-06-19)<br>```bash<br>cat .mcp.json \| python3 -m json.tool<br># → openmemory entry present at top level mcpServers<br>grep -r "openmemory" --include="*.py" .<br># → exit 1, 0 matches<br>```<br>**Output**: `.mcp.json` has `"openmemory": {"type":"http","url":"http://localhost:8080/mcp"}`. No Python files import or reference openmemory.<br>**Verdict**: ✅ dev-only confirmed — openmemory is a local MCP sidecar with zero production code coupling |
 | **risk_if_unverified** | — (verification cost is ~30 seconds; no acceptable doc-only path) |
 
 ---
@@ -51,7 +51,7 @@ While locating `code_ref` line numbers for this draft, three things in v4.4 plan
 | Field | Content |
 |-------|---------|
 | **code_ref** | `db/postgres_utils.py:45-91`, `agent/agent_factory.py:10` (`from langmem import create_manage_memory_tool`) |
-| **verification_result** | ⏳ pending — run locally with bot running:<br>```bash<br>psql $DATABASE_URL -c "\dt" \| grep -E "store\|checkpoint"<br>psql $DATABASE_URL -c "SELECT prefix, key FROM store LIMIT 5;"<br>```<br>**Expected**: tables `store`, `store_vectors`, `checkpoints` exist; `store` has rows when bot has handled messages.<br>**Your output**:<br>```<br>[paste]<br>```<br>**Verdict**: ☐ store exists & writes flow / ☐ schema mismatch (escalate) |
+| **verification_result** | ✅ **schema confirmed** (2026-06-19); writes pending bot session<br>```bash<br>psql "postgresql://vernon@localhost:5432/pantheon" -c "\dt" \| grep -E "store\|checkpoint"<br># → checkpoints, checkpoint_blobs, checkpoint_migrations, checkpoint_writes,<br>#   store, store_migrations, store_vectors — all present<br>psql ... -c "SELECT prefix, key FROM store LIMIT 5;"<br># → 0 rows (bot not run with memory writes yet in this env)<br>\d store<br># → prefix TEXT, key TEXT, value JSONB — matches Pitfall 1 variant: use WHERE prefix LIKE '%X%'<br>```<br>**Verdict**: ✅ all 7 tables exist, schema is `prefix TEXT` (not array/JSONB). Store empty — Row 3 will confirm writes once bot runs. |
 | **risk_if_unverified** | — |
 
 ---
@@ -61,7 +61,7 @@ While locating `code_ref` line numbers for this draft, three things in v4.4 plan
 | Field | Content |
 |-------|---------|
 | **code_ref** | `agent/agent_factory.py:137` (`tools=[create_manage_memory_tool(namespace=namespace)]`) |
-| **verification_result** | ⏳ pending — run locally:<br>1. Send Telegram bot a message: `"remember that my favorite color is blue"`<br>2. Then query:<br>```bash<br>psql $DATABASE_URL -c "SELECT prefix, key, value FROM store WHERE value::text ILIKE '%blue%' LIMIT 5;"<br>```<br>**Expected**: row(s) with `prefix` containing your Telegram user_id (string form).<br>**Your output**:<br>```<br>[paste]<br>```<br>**Verdict**: ☐ tool writes confirmed / ☐ no rows written (escalate — tool may not be bound) |
+| **verification_result** | ⏳ **manual step required** — bot must be running<br>1. Start bot: `python main.py`<br>2. Send Telegram: `"remember that my favorite color is blue"`<br>3. Then query:<br>```bash<br>psql "postgresql://vernon@localhost:5432/pantheon" -c "SELECT prefix, key, value FROM store WHERE value::text ILIKE '%blue%' LIMIT 5;"<br>```<br>**Expected**: row(s) with `prefix` containing your Telegram numeric user_id (e.g. `"5178700920"`).<br>**Your output**:<br>```<br>[paste after running bot]<br>```<br>**Verdict**: ☐ tool writes confirmed / ☐ no rows written (escalate) |
 | **risk_if_unverified** | — |
 
 ---
@@ -71,7 +71,7 @@ While locating `code_ref` line numbers for this draft, three things in v4.4 plan
 | Field | Content |
 |-------|---------|
 | **code_ref** | `agent/agent_factory.py:66` (`namespace = (str(user_id),)`), `agent/agent_factory.py:83` (same, in closure), `agent/agent_factory.py:137` (passed to tool) |
-| **verification_result** | ⏳ pending — run locally with **two different Telegram accounts**:<br>1. Account A sends: `"remember my name is Alice"`<br>2. Account B sends: `"remember my name is Bob"`<br>3. Query:<br>```bash<br>psql $DATABASE_URL -c "SELECT DISTINCT prefix FROM store;"<br>psql $DATABASE_URL -c "SELECT prefix, value FROM store WHERE value::text ILIKE '%lice%' OR value::text ILIKE '%ob%';"<br>```<br>**Expected**: two distinct prefixes, one per Telegram user_id; no rows leak across prefixes.<br>**Your output**:<br>```<br>[paste]<br>```<br>**Verdict**: ☐ user-level isolation works / ☐ shared prefix (escalate — major bug) / ☐ skipped (only have one test account) |
+| **verification_result** | **doc-only — verify on first available second Telegram account** (2026-06-19)<br>Current store has 0 rows; checkpoints show only one user (`thread_id = 5178700920`). Two-account test not yet possible.<br>```bash<br>psql "postgresql://vernon@localhost:5432/pantheon" -c "SELECT DISTINCT prefix FROM store;"<br># → 0 rows<br>```<br>**Verdict**: ☐ skipped (only one test account) — see `risk_if_unverified` |
 | **risk_if_unverified** | If skipped (one account only): cannot confirm `user_id`-level isolation works as designed; Sprint 1 namespace migration would be flying blind on what "current isolation" actually means. If skipped, mark as doc-only and verify on first available second account. |
 
 ---
@@ -81,7 +81,7 @@ While locating `code_ref` line numbers for this draft, three things in v4.4 plan
 | Field | Content |
 |-------|---------|
 | **code_ref** | `db/postgres_utils.py:31` (`AsyncPostgresSaver(setup_conn)`), `agent/agent_factory.py:60` (`checkpointer = AsyncPostgresSaver(pool)`) |
-| **verification_result** | ⏳ pending — run locally with bot handling a few messages:<br>```bash<br>psql $DATABASE_URL -c "SELECT thread_id, COUNT(*) FROM checkpoints GROUP BY thread_id;"<br>```<br>**Expected**: rows with `thread_id` equal to Telegram user_id (string); count grows per turn.<br>**Your output**:<br>```<br>[paste]<br>```<br>**Verdict**: ☐ checkpoints written, thread_id == user_id confirmed / ☐ thread_id differs from user_id (escalate — different scoping than assumed) |
+| **verification_result** | ✅ **checkpoints written, thread_id == user_id confirmed** (2026-06-19)<br>```bash<br>psql "postgresql://vernon@localhost:5432/pantheon" -c "SELECT thread_id, COUNT(*) FROM checkpoints GROUP BY thread_id;"<br>#  thread_id  | count<br># ------------+-------<br>#  5178700920 |     3<br>```<br>**Verdict**: ✅ `thread_id = "5178700920"` (numeric Telegram user_id as string), 3 turns. One user, confirmed scoping. |
 | **risk_if_unverified** | — |
 
 ---
@@ -91,7 +91,7 @@ While locating `code_ref` line numbers for this draft, three things in v4.4 plan
 | Field | Content |
 |-------|---------|
 | **code_ref** | `main.py:233` (`user_id="default_user"`), `main.py:238` (`TelegramBot(..., default_agent, ...)`), `telegram_adapter/telegram_bot.py:191-195` (fallback path: `logger.warning(f"No agent_manager available, using shared agent for user {user_id}")` followed by invoke with `thread_id=user_id` but the agent's bound namespace is still `("default_user",)`) |
-| **verification_result** | ⏳ pending — two checks:<br>**A. Confirm default_user namespace gets written**:<br>```bash<br># Trigger fallback by temporarily disabling agent_manager (or check existing logs)<br>psql $DATABASE_URL -c "SELECT * FROM store WHERE prefix::text LIKE '%default_user%';"<br>```<br>**B. Confirm fallback path is reachable in production code**:<br>```bash<br>grep -n "agent_manager" telegram_adapter/telegram_bot.py<br>grep -n "default_agent" telegram_adapter/telegram_bot.py<br>```<br>**Expected**: (A) `default_user` rows may or may not exist depending on past fallbacks; (B) fallback path confirmed live (not dead code).<br>**Your output**:<br>```<br>[paste]<br>```<br>**Verdict**: ☐ fallback live, default_user namespace risk confirmed / ☐ dead code, lower severity |
+| **verification_result** | ✅ **fallback live, default_user namespace risk confirmed** (2026-06-19)<br>**A.**<br>```bash<br>psql "postgresql://vernon@localhost:5432/pantheon" -c "SELECT * FROM store WHERE prefix::text LIKE '%default_user%';"<br># → 0 rows (fallback never triggered yet in this environment)<br>```<br>**B.**<br>```bash<br>grep -n "agent_manager" telegram_adapter/telegram_bot.py<br># L178: agent_manager = getattr(self, 'agent_manager', None)<br># L180: if agent_manager:<br># L182:   user_agent = await agent_manager.get_agent(user_id)<br># L190: # Fall back to the shared agent if agent_manager is not available<br># L191: logger.warning(f"No agent_manager available, using shared agent for user {user_id}")<br># L284, L342-344: shutdown / remove_agent paths also present<br>```<br>**Verdict**: ✅ Fallback path is **live code** (not dead). `default_user` rows not yet present because `agent_manager` always returns successfully in current env. Cross-tenant leak risk is latent, not yet materialized — but path is reachable in production if `agent_manager.get_agent()` raises or returns None. |
 | **risk_if_unverified** | — (this is a High-impact risk per v4.4 register; must be verified) |
 
 ---
@@ -101,7 +101,7 @@ While locating `code_ref` line numbers for this draft, three things in v4.4 plan
 | Field | Content |
 |-------|---------|
 | **code_ref** | `db/user_data.py:13-99` (function implemented; "TODO" comment at L27-31 is stale). Deletes from: `checkpoints` (L43-48 raw SQL), `store` (L61-69 raw SQL), `store_vectors` (L72-80 raw SQL), AND `store.adelete(old_namespace, user_id)` at L91 (langgraph API). |
-| **verification_result** | ⏳ pending — run `/reset` in Telegram, then verify deletion:<br>1. Send bot: `"remember X for me"` (write memory)<br>2. Confirm row exists:<br>```bash<br>psql $DATABASE_URL -c "SELECT COUNT(*) FROM store WHERE prefix::text LIKE '%<your_user_id>%';"<br>psql $DATABASE_URL -c "SELECT COUNT(*) FROM checkpoints WHERE thread_id = '<your_user_id>';"<br>```<br>3. Trigger `/reset` (or whatever command invokes `clear_user_data`; see `telegram_bot.py:339`)<br>4. Re-run queries above — both counts should be 0.<br>**Expected**: all three tables clear atomically for the target user_id.<br>**Your output**:<br>```<br>[paste pre-reset counts]<br>[paste post-reset counts]<br>```<br>**Verdict**: ☐ atomic clear works / ☐ partial clear (specify which table not cleared) — partial = escalate |
+| **verification_result** | ⏳ **manual step required** — bot must be running<br>Command confirmed: `telegram_bot.py:319` → `/reset` command handler invokes `clear_user_data`.<br>Steps:<br>1. Start bot: `python main.py`<br>2. Send bot: `"remember X for me"` — confirm Row 3 write first<br>3. Pre-reset counts:<br>```bash<br>psql "postgresql://vernon@localhost:5432/pantheon" -c "SELECT COUNT(*) FROM store WHERE prefix LIKE '%5178700920%';"<br>psql "postgresql://vernon@localhost:5432/pantheon" -c "SELECT COUNT(*) FROM checkpoints WHERE thread_id = '5178700920';"<br>```<br>4. Send `/reset` to bot<br>5. Re-run queries — expect both 0<br>**Your output**:<br>```<br>[paste pre-reset counts]<br>[paste post-reset counts]<br>```<br>**Verdict**: ☐ atomic clear works / ☐ partial clear (escalate) |
 | **risk_if_unverified** | If unverified: `MEMORY_LAYER_DECISION` cannot honestly answer C2 (delete/export semantics) for option A; Sprint 1 may falsely assume delete works and skip the test. Verification is ~5 minutes; doc-only not justified. |
 
 ---
@@ -111,7 +111,7 @@ While locating `code_ref` line numbers for this draft, three things in v4.4 plan
 | Field | Content |
 |-------|---------|
 | **code_ref** | (no file — verifying absence) |
-| **verification_result** | ⏳ pending — run locally:<br>```bash<br>grep -rn "tenant" --include="*.py" . \| grep -v test_ \| head -20<br>grep -rn "tenant_id" --include="*.py" .<br>```<br>**Expected**: 0 hits, or only doc/comment mentions, no schema or model references.<br>**Your output**:<br>```<br>[paste]<br>```<br>**Verdict**: ☐ absent confirmed (Sprint 1 introduces tenants) / ☐ partial scaffolding exists (good news — note where) |
+| **verification_result** | ✅ **absent confirmed** (2026-06-19)<br>```bash<br>grep -rn "tenant" --include="*.py" . \| grep -v test_ \| head -20<br># → 0 matches<br>grep -rn "tenant_id" --include="*.py" .<br># → 0 matches<br>```<br>**Verdict**: ✅ No tenant layer exists anywhere in Python code. Sprint 1 introduces it from scratch. |
 | **risk_if_unverified** | — |
 
 ---
@@ -121,7 +121,7 @@ While locating `code_ref` line numbers for this draft, three things in v4.4 plan
 | Field | Content |
 |-------|---------|
 | **code_ref** | `telegram_adapter/telegram_bot.py:187` (`config={"configurable": {"user_id": user_id, "thread_id": user_id}}`), `telegram_adapter/telegram_bot.py:194` (same in fallback) |
-| **verification_result** | ⏳ pending — observation test:<br>1. Send bot a message at time T1. Note the conversation context.<br>2. Wait long enough that you'd consider it a "new conversation" (or use a different chat session if possible).<br>3. Send a new message that references something from T1 (e.g. "what did I just ask you?").<br>4. Query:<br>```bash<br>psql $DATABASE_URL -c "SELECT thread_id, checkpoint_id, parent_checkpoint_id, type FROM checkpoints WHERE thread_id = '<your_user_id>' ORDER BY checkpoint_id DESC LIMIT 10;"<br>```<br>**Expected if conflated (T1 assumption)**: same `thread_id` for both turns; bot recalls old context indefinitely; checkpoints grow unbounded under one thread.<br>**Expected if separated**: different `thread_id` per session.<br>**Your output**:<br>```<br>[paste]<br>```<br>**Verdict**: ☐ conflation confirmed (Step 1.5 T2/T3 strongly indicated) / ☐ already separated (Step 1.5 = T1 viable) |
+| **verification_result** | ✅ **conflation confirmed** (2026-06-19)<br>```bash<br>psql "postgresql://vernon@localhost:5432/pantheon" -c \<br>  "SELECT thread_id, checkpoint_id, parent_checkpoint_id FROM checkpoints WHERE thread_id = '5178700920' ORDER BY checkpoint_id DESC LIMIT 10;"<br>#  thread_id  | checkpoint_id                        | parent_checkpoint_id<br># ------------+--------------------------------------+--------------------------------------<br>#  5178700920 | 1f142291-7068-6072-8001-8a3854b2f533 | 1f142291-440e-68c8-8000-0d9bc1d3adc9<br>#  5178700920 | 1f142291-440e-68c8-8000-0d9bc1d3adc9 | 1f142291-440b-6b6e-bfff-e06e19f0756f<br>#  5178700920 | 1f142291-440b-6b6e-bfff-e06e19f0756f | (null)<br># 3 rows — all under one thread, linear chain<br>```<br>**Verdict**: ✅ Conflation confirmed. All 3 turns share `thread_id = user_id`; checkpoints grow as a single linear chain. **Step 1.5 T2 strongly indicated** (`thread_id = f"{user_id}:{session_id}"`). |
 | **risk_if_unverified** | — |
 
 ---
@@ -141,7 +141,7 @@ While locating `code_ref` line numbers for this draft, three things in v4.4 plan
 | Field | Content |
 |-------|---------|
 | **code_ref** | (no file — verifying absence) |
-| **verification_result** | ⏳ pending — run locally:<br>```bash<br>grep -rn "export" --include="*.py" api/ \| head -10<br>```<br>**Expected**: 0 hits for user/memory export endpoints. Out of Stage 2 scope; flag for Stage 3.<br>**Your output**:<br>```<br>[paste]<br>```<br>**Verdict**: ☐ absent confirmed / ☐ partial export exists (note where) |
+| **verification_result** | ✅ **absent confirmed** (2026-06-19)<br>```bash<br>grep -rn "export" --include="*.py" api/ \| head -10<br># → 0 matches<br>```<br>**Verdict**: ✅ No export endpoint exists in `api/`. Out of Stage 2 scope — flag for Stage 3 roadmap. |
 | **risk_if_unverified** | — |
 
 ---
