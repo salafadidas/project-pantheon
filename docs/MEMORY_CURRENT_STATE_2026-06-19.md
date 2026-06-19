@@ -2,7 +2,7 @@
 
 **Date**: 2026-06-19
 **Sprint**: Sprint 0 (Memory Layer Assessment)
-**Status**: Step 1 in progress — 8/12 rows verified; 2 rows need live bot session (Row 3, Row 7); 1 doc-only (Row 4); 1 doc-only deferred (Row 10, 12)
+**Status**: Step 1 CLOSED (2026-06-19) — 8/12 rows verified; Row 3 + Row 7 doc-only (env blocker, deferred to Sprint 1 kickoff); Row 4 doc-only (single account); Row 10 + Row 12 doc-only deferred (Sprint 5 / Sprint 2)
 **Parent**: `docs/PROJECT_PLAN_v4.4.md` §4 Sprint 0 Step 1
 **Companion**: `docs/SPRINT0_RUNBOOK.md` (local execution guide)
 
@@ -61,8 +61,8 @@ While locating `code_ref` line numbers for this draft, three things in v4.4 plan
 | Field | Content |
 |-------|---------|
 | **code_ref** | `agent/agent_factory.py:137` (`tools=[create_manage_memory_tool(namespace=namespace)]`) |
-| **verification_result** | ⏳ **manual step required** — bot must be running<br>1. Start bot: `python main.py`<br>2. Send Telegram: `"remember that my favorite color is blue"`<br>3. Then query:<br>```bash<br>psql "postgresql://vernon@localhost:5432/pantheon" -c "SELECT prefix, key, value FROM store WHERE value::text ILIKE '%blue%' LIMIT 5;"<br>```<br>**Expected**: row(s) with `prefix` containing your Telegram numeric user_id (e.g. `"5178700920"`).<br>**Your output**:<br>```<br>[paste after running bot]<br>```<br>**Verdict**: ☐ tool writes confirmed / ☐ no rows written (escalate) |
-| **risk_if_unverified** | — |
+| **verification_result** | **doc-only — local env not available; deferred to Sprint 1 kickoff checklist** (2026-06-19)<br>Reason: `python main.py` requires full local dev stack (Postgres + Redis + Telegram bot token running on this Mac). Confirmed via `ps aux` that no `main.py`, no Python web server, no Postgres, no Redis is running locally — Pantheon bot runs on a remote/cloud server, not this Mac. Verification commands remain valid; run them at Sprint 1 kickoff when Sprint 1 owner stands up the dev environment. |
+| **risk_if_unverified** | **`create_manage_memory_tool` binding may be broken (wrong namespace arg, missing store connection, or silently swallowed error) without anyone noticing until Sprint 1 T2 migration hits an empty store.** Sprint 1 owner MUST verify Row 3 before marking S1-MEM-1 complete. Add to Sprint 1 kickoff checklist item #1: confirm store row count increases after a "remember X" message. |
 
 ---
 
@@ -101,8 +101,8 @@ While locating `code_ref` line numbers for this draft, three things in v4.4 plan
 | Field | Content |
 |-------|---------|
 | **code_ref** | `db/user_data.py:13-99` (function implemented; "TODO" comment at L27-31 is stale). Deletes from: `checkpoints` (L43-48 raw SQL), `store` (L61-69 raw SQL), `store_vectors` (L72-80 raw SQL), AND `store.adelete(old_namespace, user_id)` at L91 (langgraph API). |
-| **verification_result** | ⏳ **manual step required** — bot must be running<br>Command confirmed: `telegram_bot.py:319` → `/reset` command handler invokes `clear_user_data`.<br>Steps:<br>1. Start bot: `python main.py`<br>2. Send bot: `"remember X for me"` — confirm Row 3 write first<br>3. Pre-reset counts:<br>```bash<br>psql "postgresql://vernon@localhost:5432/pantheon" -c "SELECT COUNT(*) FROM store WHERE prefix LIKE '%5178700920%';"<br>psql "postgresql://vernon@localhost:5432/pantheon" -c "SELECT COUNT(*) FROM checkpoints WHERE thread_id = '5178700920';"<br>```<br>4. Send `/reset` to bot<br>5. Re-run queries — expect both 0<br>**Your output**:<br>```<br>[paste pre-reset counts]<br>[paste post-reset counts]<br>```<br>**Verdict**: ☐ atomic clear works / ☐ partial clear (escalate) |
-| **risk_if_unverified** | If unverified: `MEMORY_LAYER_DECISION` cannot honestly answer C2 (delete/export semantics) for option A; Sprint 1 may falsely assume delete works and skip the test. Verification is ~5 minutes; doc-only not justified. |
+| **verification_result** | **doc-only — local env not available; deferred to Sprint 1 kickoff checklist** (2026-06-19)<br>Same blocker as Row 3: no local bot process. Code inspection confirms: `/reset` handler at `telegram_bot.py:319` → `clear_user_data` → dual delete path (raw SQL + langgraph API `store.adelete`). Static analysis suggests implementation is complete and dual-path. Runtime atomicity between both paths unverified. |
+| **risk_if_unverified** | **`MEMORY_LAYER_DECISION` C2 answer (delete semantics) is based on static code reading only, not live execution.** If `store.adelete` and raw SQL run non-atomically and one silently fails, Sprint 1 S1-DEL-1 "verify atomicity" task is the safety net. Sprint 1 owner: run `/reset` end-to-end and confirm both store + checkpoints hit 0. Add to Sprint 1 kickoff checklist item #2. |
 
 ---
 
