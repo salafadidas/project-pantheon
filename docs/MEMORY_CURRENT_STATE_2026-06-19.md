@@ -158,7 +158,7 @@ While locating `code_ref` line numbers for this draft, three things in v4.4 plan
 
 ## Step 1.5 — `thread_id == user_id` decision
 
-**To be completed in `MEMORY_LAYER_DECISION_2026-06-20.md` §Thread-vs-User, informed by Row 9 verification.**
+**To be completed in `MEMORY_LAYER_DECISION_2026-06-19.md` §Thread-vs-User, informed by Row 9 verification.**
 
 Default recommendation: **T2** (`thread_id = f"{user_id}:{session_id}"`). See v4.4 Step 1.5 + canonical thread_id rule + issue #21 (collapse `api/v1/sessions.py or equivalent` into single authority module).
 
@@ -167,7 +167,7 @@ Default recommendation: **T2** (`thread_id = f"{user_id}:{session_id}"`). See v4
 ## Sprint 0 Exit Checklist
 
 - [ ] All 12 rows have non-pending `verification_result` OR explicit `risk_if_unverified` text
-- [ ] Plan baseline corrections (3 items above) acknowledged in `MEMORY_LAYER_DECISION_2026-06-20.md`
+- [ ] Plan baseline corrections (3 items above) acknowledged in `MEMORY_LAYER_DECISION_2026-06-19.md`
 - [ ] Step 1.5 thread_id decision committed in decision doc
 - [ ] Step 2 candidate evaluation (A vs. B/C/D with C1-C6) completed in decision doc
 - [ ] Step 3 final choice + Sprint 1 hardening checklist committed
