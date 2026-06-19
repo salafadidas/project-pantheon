@@ -3,7 +3,7 @@
 **Date**: 2026-06-20
 **Status**: Direction-only skeleton — Sprint 0 sets direction; Sprint 1 owner produces the executable plan (backfill SQL, dual-read code, tests).
 **Parent**: `docs/PROJECT_PLAN_v4.4.md` §Sprint 1 Sub-deliverable A + B
-**Companion**: `docs/MEMORY_LAYER_DECISION_2026-06-20.md`
+**Companion**: `docs/MEMORY_LAYER_DECISION_2026-06-19.md`
 
 ---
 
