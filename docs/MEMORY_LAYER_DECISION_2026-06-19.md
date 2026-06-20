@@ -15,6 +15,16 @@ We reviewed the current implementation and confirmed that Pantheon already runs 
 
 ---
 
+## Key findings (post 2026-06-20 verification)
+
+**New findings from bot-run verification (Row 3 + Row 7 in Step 1 inventory):**
+
+- **Memory write path is broken in current production** — `langmem.create_manage_memory_tool` is bound to the agent (`agent_factory.py:137`) and `store=` is passed correctly (L139), but `MEMORY_SYSTEM_PROMPT` lacks instruction telling the LLM **when** to call the tool. Result: even an explicit "remember X" message produces 0 store rows. This is a Sprint 1 must-fix (S1-MEM-1) — without it, namespace migration is migrating nothing.
+- **Delete happy-path partially verified, atomicity unverifiable until write path is fixed** — `clear_user_data` correctly empties `checkpoints` (6→0). `store` and `store_vectors` could not be exercised because Row 3 defect left them empty. Full atomicity test deferred until after S1-MEM-1.
+- **This sequencing changes Sprint 1 ordering**: S1-MEM-1 must land **before** S1-NS-MIG (namespace migration), otherwise the migration scripts run against empty tables. The migration plan in `MEMORY_MIGRATION_PLAN.md` §Memory is structurally correct but the data backfill section currently assumes existing rows to copy — adjust expectation: there may be very few/no rows to migrate at the moment.
+
+**Original key findings (from inventory):**
+
 ## Key findings (from `MEMORY_CURRENT_STATE_2026-06-19.md`)
 
 - **`default_user` fallback is live code, not dead code** — confirmed reachable via `telegram_bot.py:191-195`. This is a real latent cross-tenant memory leak risk, no longer theoretical.
@@ -74,7 +84,7 @@ C1–C6 production concerns per v4.4 §Sprint 0 Step 2:
 | # | Status | Notes |
 |---|--------|-------|
 | C1 | **Pass with hardening** | Per-user namespace exists today (`(user_id,)`); promote to `(tenant_id, user_id)` and remove `default_user` fallback. Sprint 1 work. |
-| C2 | **Pass pending verification** | `clear_user_data` implemented but Row 7 atomicity check still pending (bot-run required). Risk-accepted: Sprint 1 hardening + verification gates merge of S1-NS-1. |
+| C2 | **Partial — happy-path only** | Row 7 verified `checkpoints 6→0` after `/reset`. BUT `store` and `store_vectors` were already 0 pre-reset (Row 3 finding: memory tool not actually called — see below), so delete-of-existing-rows in those two tables was not actually exercised. C2 reverification gated on Sprint 1 task S1-MEM-1 (fix MEMORY_SYSTEM_PROMPT) → then re-run Row 7 with non-empty store. |
 | C3 | **Pass — deferred** | Single Postgres for memory + checkpoints; Sprint 5 DR drill verifies row-count consistency across `store` / `store_vectors` / `checkpoints` after restore (issue #20). |
 | C4 | **Pass — bounded** | Stays on current stack. Only namespace shape changes; backfill plan in `MEMORY_MIGRATION_PLAN.md`. Conditional checkpoint migration if T2 implemented (which it will be). |
 | C5 | **Partial — accepted** | Read-side: structlog at `agent_factory.py:80, 85, 95`. Write-side: not currently logged; Sprint 2 OTel write spans cover this (issue #20). |
@@ -143,17 +153,15 @@ T2 is now confirmed, not tentative. This means SPRINT1-CKPT-MIG is **uncondition
 
 ---
 
-## Pending verification items (not blockers for this decision)
+## Verification status (post bot run 2026-06-20, commit 8f2405c)
 
-These rows in Step 1 inventory remain `pending bot run` or `doc-only`. They do not affect the candidate choice, but they affect Sprint 1 readiness:
-
-| Row | Item | Required before |
-|-----|------|----------------|
-| Row 3 | Memory tool write path | Sprint 1 kickoff |
-| Row 7 | `clear_user_data` atomic delete | Sprint 1 task S1-DEL-1 starts |
-| Row 4 | Second-account isolation | Whenever a second test account becomes available; not blocking |
-| Row 10 | Backup/restore | Sprint 5 DR drill |
-| Row 12 | Auditability | Sprint 2 OTel rollout |
+| Row | Item | Status | Sprint 1 implication |
+|-----|------|--------|---------------------|
+| Row 3 | Memory tool write path | ⚠️ **Defect found** — tool is bound (`agent_factory.py:137`) but `MEMORY_SYSTEM_PROMPT` does not instruct the LLM when to call it. Store rows = 0 even after explicit "remember X" message. | **S1-MEM-1 (NEW must-fix)**: fix prompt + re-run Row 3. Blocks meaningful namespace migration — there is currently nothing to migrate. |
+| Row 7 | `clear_user_data` atomic delete | ⚠️ **Happy-path only** — `checkpoints 6→0` verified; `store` and `store_vectors` could not be verified because they were already empty pre-reset (consequence of Row 3 defect). | **S1-DEL-1 scope expanded**: after S1-MEM-1 fix, re-run Row 7 with non-empty store. Race-condition / atomicity test still separate. |
+| Row 4 | Second-account isolation | doc-only — single account | Verify when second test account available. Not blocking. |
+| Row 10 | Backup/restore | doc-only — deferred | Sprint 5 DR drill (issue #20) |
+| Row 12 | Auditability | doc-only — deferred | Sprint 2 OTel write spans (issue #20) |
 
 ---
 
