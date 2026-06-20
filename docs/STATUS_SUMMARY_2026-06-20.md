@@ -1,8 +1,8 @@
 ---
 title: Project Pantheon — Status Summary
 date: 2026-06-20
-sprint: Sprint 0 → Sprint 1 transition
-branch: claude/remote-control-Q2YAQ
+sprint: Sprint 0 closed → Sprint 1 in progress
+branch: claude/remote-control-Q2YAQ (S1-MEM-1 PR)
 ---
 
 # Project Pantheon — Status Summary (2026-06-20)
@@ -11,44 +11,59 @@ branch: claude/remote-control-Q2YAQ
 
 | 階段 | 狀態 | 說明 |
 |------|------|------|
-| Sprint 0 — Memory Layer Assessment | ✅ 完成 | 庫存文件完成、thread_id 決策完成 |
-| S1-MEM-1 — Memory tool prompt fix | ✅ 完成 | 驗證寫入 store table |
-| S1-MEM-2 — Retrieval & embedding | 🔜 待開始 | Google embedding 問題待解決 |
-| Sprint 1 — Auth / Multi-tenant / Hardening | 🔜 尚未開始 | 等 S1-MEM-1 merge 後展開 |
+| Sprint 0 — Memory Layer Assessment | ✅ Closed | Issue #23; decision doc + migration skeleton committed |
+| Sprint 1 capacity decision | ✅ Resolved | Issue #22; keep T2, defer OAuth → Sprint 6, 1-week timeline preserved |
+| **S1-MEM-1** — Memory tool prompt fix + format hardening + store setup fix | ✅ **Today** | PR pending (this branch) |
+| S1-MEM-2 — Retrieval quality / embedding | 🔜 Queued | Blocked on embedding provider decision |
+| S1-DEL-1, S1-BOOT-1, S1-AUTH-1/2/3, S1-NS-MIG, S1-NS-1, S1-TID-1, SPRINT1-CKPT-MIG, S1-CLEAN-1, #21 | 🔜 Sprint 1 remainder | 1-week timeline |
 
 ---
 
-## Sprint 0 完成事項
+## Sprint 0 closure recap
 
 ### Step 1 — Current-state inventory
-- 文件：`docs/MEMORY_CURRENT_STATE_2026-06-19.md`（已在上一 session commit）
-- 全部 10 項關切已驗證；2 項標記為 doc-only（backup/restore → Sprint 5；auditability → Sprint 2），風險已明文記錄
+- File: `docs/MEMORY_CURRENT_STATE_2026-06-19.md`
+- **12 rows**: 8 verified + 2 defect-found (Rows 3 & 7) + 1 doc-only acceptable (Row 4 single account) + 3 deferred-with-owner (Rows 10/12 + Row 4 partial)
+- Row 3 (memory tool write path): ⚠️ defect found → fixed today by S1-MEM-1
+- Row 7 (clear_user_data atomicity): ⚠️ happy-path only → S1-DEL-1 to re-run with non-empty store
 
-### Step 1.5 — thread_id 決策
-- 決定：**T1 — 保持 `thread_id == user_id`**（最低衝擊，不觸發 SPRINT1-CKPT-MIG）
-- 文件：`docs/MEMORY_LAYER_DECISION_2026-06-20.md`（已在上一 session commit）
+### Step 1.5 — thread_id decision
+- **T2 locked**: `thread_id = f"{user_id}:{session_id}"`
+- File: `docs/MEMORY_LAYER_DECISION_2026-06-19.md` §Thread-vs-User
+- Consequence: SPRINT1-CKPT-MIG is **mandatory** (not conditional), and S1-TID-1 / S1-TEST-2 / S1-TEST-3 are all active in Sprint 1
+
+### Step 2/3 — Candidate decision
+- **Candidate A** (Keep & harden langmem + AsyncPostgresStore) selected
+- Candidate D (claude-mem) gated out per v4.4 gating rule
+
+### Sprint 1 capacity (#22) outcome
+- Keep T2 ✅
+- SPRINT1-CKPT-MIG mandatory ✅
+- **Defer NextAuth / Google OAuth → Sprint 6** ✅
+- Sprint 1 timeline preserved at 1 week ✅
+- API-key-only auth for Sprint 1; OAuth lands at beta in Sprint 6
 
 ---
 
-## Sprint 1 本日完成：S1-MEM-1
+## Today's work: S1-MEM-1 (this branch)
 
-### 問題描述
-LLM 收到「記住我最喜歡的顏色是綠色」時，不會主動呼叫 `manage_memory` tool。
+### Problem
+LLM was not calling `manage_memory` tool even when user explicitly said "remember that X". Sprint 0 Row 3 verification surfaced this defect.
 
-### 根本原因
-1. `MEMORY_SYSTEM_PROMPT` 未告知 LLM 何時該呼叫 tool
-2. `agent_factory.py:120` 用 `.format()` 插入記憶內容，若記憶含 `{}` 會拋 KeyError
-3. `AsyncPostgresStore.setup()` 在 `EMBED_MODEL=none` 時仍試圖建立 vector index，導致 `store` table 未被建立（`store_migrations` 誤判為已完成）
+### Root cause (3 layers)
+1. **`MEMORY_SYSTEM_PROMPT`** had no instruction telling the LLM when to use the tool
+2. **`agent_factory.py:120`** used `.format()` which would raise `KeyError` on any memory content containing `{` or `}` characters (latent bug, would have surfaced once memory writes started working)
+3. **`db/postgres_utils.py`** `AsyncPostgresStore.setup()` always tried to build a vector index. When `EMBED_MODEL=none`, the `store` table was silently skipped (third bug discovered during S1-MEM-1 implementation, not originally in scope)
 
-### 修復內容
+### Fix
 
-| 檔案 | 修改 |
-|------|------|
-| `agent/prompts.py` | 重寫 `MEMORY_SYSTEM_PROMPT`，加入 manage_memory tool 呼叫規則與範例 |
+| File | Change |
+|------|--------|
+| `agent/prompts.py` | Rewrote `MEMORY_SYSTEM_PROMPT` with explicit `manage_memory` rules and negative rules |
 | `agent/agent_factory.py:120` | `.format()` → `.replace()` |
-| `db/postgres_utils.py` | `EMBED_MODEL=none` 時 `index_config=None`，跳過 vector index |
+| `db/postgres_utils.py` | Conditional `index_config = None` when `EMBED_MODEL=none` |
 
-### 驗證結果 ✅
+### Verification ✅
 
 ```sql
 SELECT prefix, key, value FROM store WHERE value::text ILIKE '%green%';
@@ -58,60 +73,68 @@ SELECT prefix, key, value FROM store WHERE value::text ILIKE '%green%';
  5178700920 | 7d509a25-... | {"content": "User's favorite color is green"}
 ```
 
+Row 3 in `MEMORY_CURRENT_STATE_2026-06-19.md` is now ✅ verified.
+
 Commit: `39f2752` — `fix(memory): S1-MEM-1 — add memory tool usage instructions to system prompt`
 
----
-
-## 已知問題 / 技術債
-
-| 項目 | 嚴重度 | 說明 |
-|------|--------|------|
-| `EMBED_MODEL=none` | Medium | 無向量搜尋，記憶只能精確比對；S1-MEM-2 需解決 Google embedding 配額或換用其他 provider |
-| Google API Key 配額耗盡 | Medium | Free tier 配額用完（embedding + Gemini 模型全失敗）；需等重置或升級計費方案 |
-| `store_migrations` 黑洞 | Low | 若 `store` table 被手動刪除，setup() 不會重建（migration 表誤判）；需加 idempotent check |
-| OpenAI / claude-opus / claude-sonnet | Low | 配額或模型 ID 錯誤；只有 claude-haiku 與 gemini-2.5-flash-lite 健康 |
-| `default_user` 硬編碼 | Medium | `main.py:233`；S1-BOOT-1 處理 |
-| `.mcp.json` openmemory 條目 | Low | dev-only，S1-CLEAN-1 清除 |
+### Scope expansion note
+The `.format()` → `.replace()` fix was added to the original S1-MEM-1 scope after Vernon flagged it as a P0 latent bug (would have crashed bot for any user whose stored memory contained `{}`). The `EMBED_MODEL=none` fix in `postgres_utils.py` was discovered during implementation and necessary to make verification possible. All three changes are one logical unit (make memory write path production-safe) and ship in one commit.
 
 ---
 
-## Sprint 1 任務清單（尚未開始）
+## Known issues / tech debt surfaced during S1-MEM-1
 
-依 `PROJECT_PLAN_v4.4.md` §Sprint 1：
-
-| Task ID | Task | 狀態 |
-|---------|------|------|
-| S1-AUTH-1 | `users` + `api_keys` + `tenants` tables | ⬜ |
-| S1-AUTH-2 | Auth middleware | ⬜ |
-| S1-AUTH-3 | Per-tenant Redis namespace | ⬜ |
-| S1-BOOT-1 | 移除 `default_user` 硬編碼 | ⬜ |
-| S1-NS-1 | Namespace 升級為 `(tenant_id, user_id)` | ⬜ |
-| S1-NS-MIG | Namespace migration plan + backfill script | ⬜ |
-| S1-DEL-1 | 完成 `clear_user_data` TODO | ⬜ |
-| S1-CLEAN-1 | 移除 dev-only `.mcp.json` openmemory | ⬜ |
-| S1-UI-1 | NextAuth Google provider | ⬜ |
-| S1-TEST-1 | Auth / tenant isolation / memory delete tests | ⬜ |
-| **S1-MEM-1** | **Memory tool prompt fix** | **✅ 完成** |
-| S1-MEM-2 | Retrieval quality + Google embedding | ⬜ |
-
-> SPRINT1-CKPT-MIG 與 S1-TID-1 / S1-TEST-2 / S1-TEST-3：**不啟動**（Step 1.5 = T1）
+| Item | Severity | Action |
+|------|----------|--------|
+| `EMBED_MODEL=none` in current env | Medium | S1-MEM-2 — choose embedding provider (Google quota exhausted, Ollama local, or alternative) |
+| Google API Key quota exhausted | Medium | External — wait for reset or upgrade billing |
+| `store_migrations` blind spot | Low | If `store` table is manually deleted, `setup()` won't rebuild it (migration table sees prior version). Add idempotent check in future task. |
+| Bot LLM provider availability | Low | Only claude-haiku and gemini-2.5-flash-lite verified healthy in current env |
 
 ---
 
-## 環境狀態
+## Sprint 1 remaining task list (per PROJECT_PLAN_v4.4.md §Sprint 1)
+
+| Task ID | Task | Gate / order | Status |
+|---------|------|--------------|--------|
+| ~~S1-MEM-1~~ | ~~Memory tool prompt fix~~ | — | ✅ **Done today** |
+| S1-DEL-1 | Re-run Row 7 with non-empty store + atomicity test | After S1-MEM-1 merged | ⬜ |
+| S1-BOOT-1 | Remove `default_user` hardcoding (`main.py:233`) | Can start in parallel | ⬜ |
+| S1-AUTH-1 | `tenants` + `users` + `api_keys` tables | Required before S1-NS-1 | ⬜ |
+| S1-AUTH-2 | Auth middleware (API-key-only; Google OAuth deferred to Sprint 6) | After S1-AUTH-1 | ⬜ |
+| S1-AUTH-3 | Per-tenant Redis namespace | After S1-AUTH-1 | ⬜ |
+| #21 | Collapse session layer into single authority module | Required before S1-TID-1 | ⬜ |
+| S1-NS-MIG | Executable namespace migration plan + backfill SQL | After S1-AUTH-1 | ⬜ |
+| S1-NS-1 | Namespace `(user_id,)` → `(tenant_id, user_id)` code change | Gated by S1-NS-MIG | ⬜ |
+| S1-TID-1 | T2 thread_id implementation + adapter refactor | After #21 | ⬜ |
+| **SPRINT1-CKPT-MIG** | **Checkpoint migration (mandatory; T2 locked)** | After S1-TID-1 | ⬜ |
+| S1-CLEAN-1 | Remove `.mcp.json` openmemory dev-only entry | Any time | ⬜ |
+| S1-TEST-1/2/3 + namespace + memory_delete + tenant_isolation tests | 6 test files | Paired with each task | ⬜ |
+| S1-MEM-2 | Embedding provider + retrieval quality | Independent track | ⬜ |
+
+**Deferred to Sprint 6**: S1-UI-1 (NextAuth Google provider) per #22 decision.
+
+---
+
+## Environment snapshot (local dev)
 
 ```
-Bot PID: 85905 (claude-haiku, running)
-LLM_MODEL: claude-haiku
-EMBED_MODEL: none  ← 暫時；S1-MEM-2 前不啟用 embedding
-PG: pantheon DB — store table ✅, checkpoints ✅
-Branch: claude/remote-control-Q2YAQ
+Bot: python main.py running (LLM_MODEL=claude-haiku)
+EMBED_MODEL=none — temporary, until S1-MEM-2
+Postgres: pantheon DB (vernon@localhost:5432) — store ✅, store_vectors (empty, embedding disabled), checkpoints ✅
+Redis: localhost:6379 ✅
+Branch: claude/remote-control-Q2YAQ (this PR)
 ```
 
 ---
 
-## 下一步建議
+## Cross-references
 
-1. **S1-MEM-2**：解決 embedding provider（等 Google 配額重置，或改用 Ollama local embedding）
-2. **S1-AUTH-1**：開始資料庫 schema — `users`、`api_keys`、`tenants` tables
-3. **PR review**：`claude/remote-control-Q2YAQ` → main，包含 S1-MEM-1 三個修改
+- Sprint 0 closure: issue #23
+- Capacity re-check: issue #22
+- Backup/restore + Auditability owners: issue #20
+- Session layer collapse: issue #21
+- Stage 2 plan: `docs/PROJECT_PLAN_v4.4.md`
+- Sprint 0 decision: `docs/MEMORY_LAYER_DECISION_2026-06-19.md`
+- Sprint 0 inventory: `docs/MEMORY_CURRENT_STATE_2026-06-19.md`
+- Migration skeleton: `docs/MEMORY_MIGRATION_PLAN.md`
