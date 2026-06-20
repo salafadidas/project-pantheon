@@ -84,7 +84,7 @@ C1–C6 production concerns per v4.4 §Sprint 0 Step 2:
 | # | Status | Notes |
 |---|--------|-------|
 | C1 | **Pass with hardening** | Per-user namespace exists today (`(user_id,)`); promote to `(tenant_id, user_id)` and remove `default_user` fallback. Sprint 1 work. |
-| C2 | **Partial — happy-path only** | Row 7 verified `checkpoints 6→0` after `/reset`. BUT `store` and `store_vectors` were already 0 pre-reset (Row 3 finding: memory tool not actually called — see below), so delete-of-existing-rows in those two tables was not actually exercised. C2 reverification gated on Sprint 1 task S1-MEM-1 (fix MEMORY_SYSTEM_PROMPT) → then re-run Row 7 with non-empty store. |
+| C2 | **⚠️ Bugs found — fix required (S1-DEL-1)** | Row 7 verified 2026-06-20 with non-empty store (3 rows pre-reset). Two bugs exposed: **Bug 1** — `store` DELETE is rolled back silently because `store_vectors` DELETE in the same psycopg3 transaction fails (`relation "store_vectors" does not exist` when `EMBED_MODEL=none`); store rows 3→3 post-reset. **Bug 2** — `checkpoint_writes` not deleted (only `checkpoints` targeted at L43-48); 13 orphaned `checkpoint_writes` rows remain post-reset and cause `INVALID_CHAT_HISTORY` on next session. Fix must split the `store`/`store_vectors` transaction and add `DELETE FROM checkpoint_writes WHERE thread_id = %s`. Blocks S1-NS-1 merge until resolved. |
 | C3 | **Pass — deferred** | Single Postgres for memory + checkpoints; Sprint 5 DR drill verifies row-count consistency across `store` / `store_vectors` / `checkpoints` after restore (issue #20). |
 | C4 | **Pass — bounded** | Stays on current stack. Only namespace shape changes; backfill plan in `MEMORY_MIGRATION_PLAN.md`. Conditional checkpoint migration if T2 implemented (which it will be). |
 | C5 | **Partial — accepted** | Read-side: structlog at `agent_factory.py:80, 85, 95`. Write-side: not currently logged; Sprint 2 OTel write spans cover this (issue #20). |
@@ -157,8 +157,8 @@ T2 is now confirmed, not tentative. This means SPRINT1-CKPT-MIG is **uncondition
 
 | Row | Item | Status | Sprint 1 implication |
 |-----|------|--------|---------------------|
-| Row 3 | Memory tool write path | ⚠️ **Defect found** — tool is bound (`agent_factory.py:137`) but `MEMORY_SYSTEM_PROMPT` does not instruct the LLM when to call it. Store rows = 0 even after explicit "remember X" message. | **S1-MEM-1 (NEW must-fix)**: fix prompt + re-run Row 3. Blocks meaningful namespace migration — there is currently nothing to migrate. |
-| Row 7 | `clear_user_data` atomic delete | ⚠️ **Happy-path only** — `checkpoints 6→0` verified; `store` and `store_vectors` could not be verified because they were already empty pre-reset (consequence of Row 3 defect). | **S1-DEL-1 scope expanded**: after S1-MEM-1 fix, re-run Row 7 with non-empty store. Race-condition / atomicity test still separate. |
+| Row 3 | Memory tool write path | ✅ **Fixed (S1-MEM-1)** — `MEMORY_SYSTEM_PROMPT` rewritten; store write confirmed in prod (commit 39f2752). | S1-MEM-2 next: resolve embedding provider (Google quota). |
+| Row 7 | `clear_user_data` atomic delete | ⚠️ **Bugs found** — re-run 2026-06-20 with store=3 pre-reset. Bug 1: store DELETE rolled back (store_vectors same-transaction failure). Bug 2: checkpoint_writes not deleted. Post-reset: store 3→3, checkpoint_writes 13→13, checkpoints 6→0. | **S1-DEL-1**: split store/store_vectors transaction; add `DELETE FROM checkpoint_writes`. Blocks S1-NS-1 merge. |
 | Row 4 | Second-account isolation | doc-only — single account | Verify when second test account available. Not blocking. |
 | Row 10 | Backup/restore | doc-only — deferred | Sprint 5 DR drill (issue #20) |
 | Row 12 | Auditability | doc-only — deferred | Sprint 2 OTel write spans (issue #20) |
