@@ -117,7 +117,7 @@ class AgentFactory:
                 memory_content = ""
             
             return [
-                {"role": "system", "content": MEMORY_SYSTEM_PROMPT.format(memory_content=memory_content)},
+                {"role": "system", "content": MEMORY_SYSTEM_PROMPT.replace("{memory_content}", memory_content)},
                 *sanitize_messages(state["messages"])
             ]
         

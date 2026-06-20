@@ -65,31 +65,28 @@ async def create_memory_store(pg_connection: str, pool: AsyncConnectionPool,
         row_factory=dict_row
     )
     
+    use_vectors = embed_model and embed_model.lower() != "none"
+    index_config = {"dims": vector_dims, "embed": embed_model} if use_vectors else None
+
     try:
         # Create a temporary store for setup
         setup_store = AsyncPostgresStore(
             conn=setup_conn,
-            index={
-                "dims": vector_dims,
-                "embed": embed_model
-            }
+            index=index_config
         )
-        
+
         # Run setup on the autocommit connection
         logger.info("Setting up PostgreSQL store schema with autocommit connection")
         await setup_store.setup()
     finally:
         # Always close the setup connection
         await setup_conn.close()
-    
+
     # Now create the real store with the connection pool
     logger.info("Creating PostgreSQL store with connection pool")
     store = AsyncPostgresStore(
         conn=pool,
-        index={
-            "dims": vector_dims,
-            "embed": embed_model
-        }
+        index=index_config
     )
     
     return store
