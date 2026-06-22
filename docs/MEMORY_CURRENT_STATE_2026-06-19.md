@@ -171,3 +171,6 @@ Default recommendation: **T2** (`thread_id = f"{user_id}:{session_id}"`). See v4
 - [ ] Step 1.5 thread_id decision committed in decision doc
 - [ ] Step 2 candidate evaluation (A vs. B/C/D with C1-C6) completed in decision doc
 - [ ] Step 3 final choice + Sprint 1 hardening checklist committed
+
+
+> **2026-06-22 update**: Row 7 fully verified — 3 bugs fixed (issue #25 / PR #26). store + checkpoints + checkpoint_writes all → 0 after `/reset`. 7/7 regression tests pass (`tests/test_memory_delete.py`).
