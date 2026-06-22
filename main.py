@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from config.bot_config import BotConfig
 from config.agent_config import AgentConfig
 from db.postgres_utils import setup_database, create_memory_store
+from db.schema import setup_auth_schema
 from agent.agent_factory import AgentFactory
 from agent.agent_manager import AgentManager
 from telegram_adapter.telegram_bot import TelegramBot
@@ -189,6 +190,9 @@ async def main():
         # Setup database
         logger.info("Setting up database connection")
         pool = await setup_database(bot_config.pg_connection)
+
+        # S1-AUTH-1: create tenants / users / api_keys if not exist
+        await setup_auth_schema(pool)
 
         # Create Redis connection
         logger.info(f"Connecting to Redis at {bot_config.redis_url}")
