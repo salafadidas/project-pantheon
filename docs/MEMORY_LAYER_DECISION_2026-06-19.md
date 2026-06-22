@@ -168,3 +168,15 @@ T2 is now confirmed, not tentative. This means SPRINT1-CKPT-MIG is **uncondition
 ## Bottom line
 
 Stage 2 should not replace the memory layer right now. The correct move is to **harden the current implementation** for tenant safety, session correctness, and migration safety. `claude-mem` and other external candidates remain available as fallbacks if hardening surfaces a blocker, but A is the working assumption going into Sprint 1.
+
+
+---
+
+## Post-verification update — 2026-06-22
+
+**Candidate A C2 (delete path correctness): ✅ Pass — verified**
+
+- Issue #25 (3 bugs in `clear_user_data`) fixed in PR #26, merged 2026-06-22.
+- Live verification: store + checkpoints + checkpoint_writes all reach 0 after `/reset` with non-empty store.
+- Regression tests: `tests/test_memory_delete.py` 7/7 passing.
+- S1-NS-1 blocker removed.
