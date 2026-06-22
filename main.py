@@ -223,19 +223,11 @@ async def main():
             cleanup_interval=300
         )
 
-        logger.info(f"Creating default agent with model {agent_config.llm_model}")
-        default_agent = await agent_factory.create_agent(
-            pg_connection=agent_config.pg_connection,
-            pool=pool,
-            llm_model=agent_config.llm_model,
-            vector_dims=agent_config.vector_dims,
-            embed_model=agent_config.embed_model,
-            user_id="default_user"
-        )
-
         # Create Telegram bot
+        # S1-BOOT-1: default_agent removed — AgentManager creates per-user agents on demand.
+        # TelegramBot no longer accepts a shared default agent.
         logger.info("Starting Telegram bot")
-        telegram_bot = TelegramBot(redis, bot_config, default_agent, pool=pool, store=store)
+        telegram_bot = TelegramBot(redis, bot_config, pool=pool, store=store)
         telegram_bot.message_processor.agent_manager = agent_manager
         telegram_bot.message_processor.config = agent_config
         telegram_bot.message_processor.pool = pool

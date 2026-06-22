@@ -76,12 +76,14 @@ class TelegramTypingIndicator(TypingIndicator):
 class TelegramMessageProcessor(MessageProcessor):
     """Telegram-specific message processor implementation"""
 
-    def __init__(self, redis, agent, config: BotConfig):
+    def __init__(self, redis, config: BotConfig, agent=None):
         super().__init__(
             redis=redis,
             debounce_time=config.debounce_time,
             llm_calls_per_minute=config.llm_calls_per_minute
         )
+        # S1-BOOT-1: agent is None at startup; AgentManager provides per-user agents.
+        # Retained as optional for backward-compat with tests that pass a mock agent.
         self.agent = agent
         # Store updates and contexts for each user
         self.updates: Dict[str, Update] = {}
@@ -187,11 +189,14 @@ class TelegramMessageProcessor(MessageProcessor):
                     config={"configurable": {"user_id": user_id, "thread_id": user_id}},
                 )
             else:
-                # Fall back to the shared agent if agent_manager is not available
-                logger.warning(f"No agent_manager available, using shared agent for user {user_id}")
-                response = await self.agent.ainvoke(
-                    {"messages": [{"role": "user", "content": combined}]},
-                    config={"configurable": {"user_id": user_id, "thread_id": user_id}},
+                # S1-BOOT-1: AgentManager is required. No shared fallback agent exists.
+                # This branch should never be reached in production; raise to surface misconfiguration.
+                logger.error(
+                    "AgentManager not available for user %s — bot misconfigured", user_id
+                )
+                raise RuntimeError(
+                    "AgentManager not configured on TelegramMessageProcessor. "
+                    "Set message_processor.agent_manager after constructing TelegramBot."
                 )
 
             return response["messages"][-1].content
@@ -202,13 +207,14 @@ class TelegramMessageProcessor(MessageProcessor):
 class TelegramBot:
     """Telegram-specific bot implementation"""
 
-    def __init__(self, redis, config: BotConfig, agent, pool=None, store=None):
+    def __init__(self, redis, config: BotConfig, pool=None, store=None):
+        # S1-BOOT-1: agent parameter removed. AgentManager (set after construction)
+        # is the sole source of agents. No default_user shared agent at startup.
         self.redis = redis
         self.config = config
-        self.agent = agent
         self.pool = pool  # Database connection pool
         self.store = store  # Vector store
-        self.message_processor = TelegramMessageProcessor(redis, agent, config)
+        self.message_processor = TelegramMessageProcessor(redis, config)
 
     def create_application(self) -> Application:
         """Configure and return Telegram application"""
@@ -261,7 +267,7 @@ class TelegramBot:
     async def setup(self, application: Application) -> None:
         """Initialize application dependencies"""
         application.bot_data.update({
-            "agent": self.agent,
+            # S1-BOOT-1: no shared agent; AgentManager handles per-user agents.
             "redis": self.redis,
             "pool": self.pool,
             "store": self.store,
