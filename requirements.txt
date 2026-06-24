@@ -4,6 +4,7 @@ langmem
 langchain
 langchain-core
 langchain_community
+langchain-litellm
 asyncpg
 psycopg2-binary
 langchain-openai
