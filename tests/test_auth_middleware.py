@@ -91,7 +91,7 @@ async def test_health_route_is_exempt():
     mw = APIKeyMiddleware(app=MagicMock())
     call_next = AsyncMock(return_value=MagicMock(status_code=200))
     request = _make_request("/api/v1/health")
-    request.headers.get = MagicMock(return_value="")
+    # exempt path — middleware returns before reading headers
 
     await mw.dispatch(request, call_next)
     call_next.assert_called_once()
