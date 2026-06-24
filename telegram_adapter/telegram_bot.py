@@ -26,6 +26,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
 
 from core.exceptions import RedisConnectionError
 from core.message_handler import MessageProcessor, TypingIndicator
+from core.session import SessionManager
 from core.utils import log_error
 from config.bot_config import BotConfig
 from db.user_data import clear_user_data
@@ -184,9 +185,11 @@ class TelegramMessageProcessor(MessageProcessor):
                 user_agent = await agent_manager.get_agent(user_id)
 
                 # Use the user-specific agent
+                session_mgr = SessionManager(self.redis)
+                _session_id, thread_id = await session_mgr.get_or_create_session(user_id)
                 response = await user_agent.ainvoke(
                     {"messages": [{"role": "user", "content": combined}]},
-                    config={"configurable": {"user_id": user_id, "thread_id": user_id}},
+                    config={"configurable": {"user_id": user_id, "thread_id": thread_id}},
                 )
             else:
                 # S1-BOOT-1: AgentManager is required. No shared fallback agent exists.
