@@ -170,6 +170,11 @@ app.include_router(sessions_router)
 app.include_router(ws_router)
 app.include_router(models_router)
 
+# S1-AUTH-2: API-key middleware — gates all /api/v1/* routes except /health
+from api.middleware.auth import APIKeyMiddleware  # noqa: E402
+app.add_middleware(APIKeyMiddleware)
+
+
 
 # --------------------------------------------------------------------------- #
 # Application entrypoint                                                       #
@@ -193,6 +198,7 @@ async def main():
 
         # S1-AUTH-1: create tenants / users / api_keys if not exist
         await setup_auth_schema(pool)
+        app.state.pg_pool = pool  # S1-AUTH-2: exposed for APIKeyMiddleware
 
         # Create Redis connection
         logger.info(f"Connecting to Redis at {bot_config.redis_url}")
