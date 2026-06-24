@@ -11,21 +11,22 @@ Design constraints (Sprint 1):
   AgentManager, not the HTTP API).
 - /api/v1/health is exempt (liveness probe).
 
+Pool access:
+    The middleware reads ``request.app.state.pg_pool`` which is set by the
+    lifespan startup handler in ``main.py``.  No constructor injection needed.
+
 Usage:
-    app.add_middleware(APIKeyMiddleware, pool=pg_pool)
+    app.add_middleware(APIKeyMiddleware)
+    # lifespan must set: app.state.pg_pool = pool
 """
 from __future__ import annotations
 
 import hashlib
 import logging
-from typing import TYPE_CHECKING
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-
-if TYPE_CHECKING:
-    from psycopg_pool import AsyncConnectionPool
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ def _hash_key(raw_key: str) -> str:
     return hashlib.sha256(raw_key.encode()).hexdigest()
 
 
-async def _lookup_key(pool: "AsyncConnectionPool", key_hash: str) -> bool:
+async def _lookup_key(pool, key_hash: str) -> bool:
     """Return True if *key_hash* exists in the api_keys table."""
     try:
         async with pool.connection() as conn:
@@ -63,12 +64,11 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
     Reads the key from the ``X-API-Key`` header.  Requests missing the
     header, or whose key hash is not in ``api_keys``, receive a 401 response.
 
+    Pool is read from ``request.app.state.pg_pool``; if the pool is not yet
+    available (before lifespan startup), the middleware fails open with a 503.
+
     Exempt routes (health probe, docs) bypass the check unconditionally.
     """
-
-    def __init__(self, app, pool: "AsyncConnectionPool") -> None:
-        super().__init__(app)
-        self._pool = pool
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
@@ -87,10 +87,21 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Missing X-API-Key header"},
             )
 
+        pool = getattr(request.app.state, "pg_pool", None)
+        if pool is None:
+            # Startup not complete; fail with 503 rather than 500
+            logger.error("auth: pg_pool not available yet path=%s", path)
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Service starting up — retry shortly"},
+            )
+
         key_hash = _hash_key(raw_key)
-        valid = await _lookup_key(self._pool, key_hash)
+        valid = await _lookup_key(pool, key_hash)
         if not valid:
-            logger.warning("auth: invalid API key path=%s hash_prefix=%s", path, key_hash[:8])
+            logger.warning(
+                "auth: invalid API key path=%s hash_prefix=%s", path, key_hash[:8]
+            )
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Invalid API key"},
