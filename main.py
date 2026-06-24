@@ -20,7 +20,11 @@ from fastapi import FastAPI
 from config.bot_config import BotConfig
 from config.agent_config import AgentConfig
 from db.postgres_utils import setup_database, create_memory_store
-from db.schema import setup_auth_schema
+from db.schema import (
+    setup_auth_schema,
+    run_checkpoint_migration,
+    run_namespace_migration,
+)
 from agent.agent_factory import AgentFactory
 from agent.agent_manager import AgentManager
 from telegram_adapter.telegram_bot import TelegramBot
@@ -199,6 +203,12 @@ async def main():
         # S1-AUTH-1: create tenants / users / api_keys if not exist
         await setup_auth_schema(pool)
         app.state.pg_pool = pool  # S1-AUTH-2: exposed for APIKeyMiddleware
+
+        # SPRINT1-CKPT-MIG: rename legacy thread_ids → user_id:legacy
+        await run_checkpoint_migration(pool)
+
+        # S1-NS-1: backfill store rows to (tenant_id, user_id) namespace
+        await run_namespace_migration(pool)
 
         # Create Redis connection
         logger.info(f"Connecting to Redis at {bot_config.redis_url}")
