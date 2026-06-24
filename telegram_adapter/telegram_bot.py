@@ -344,8 +344,14 @@ class TelegramBot:
             return
 
         try:
-            # Clear user data
+            # Clear user data (checkpoints, store, Redis buffers)
             await clear_user_data(user_id, redis, pool, store)
+
+            # End the current session so the next message starts a fresh thread_id
+            from core.session import SessionManager
+            session_mgr = SessionManager(redis)
+            session_id, _ = await session_mgr.get_or_create_session(user_id)
+            await session_mgr.end_session(user_id, session_id)
 
             # Also remove the agent from the agent manager if it exists
             agent_manager = getattr(self.message_processor, 'agent_manager', None)
