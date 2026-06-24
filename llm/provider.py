@@ -3,6 +3,8 @@ Unified LLM provider using LiteLLM for multi-model support.
 
 Supports Claude, GPT, and Gemini through a single interface,
 compatible with LangChain's ChatLiteLLM wrapper for LangGraph integration.
+
+Uses langchain-litellm (standalone package; langchain-community sunset per issue #674).
 """
 
 import logging
@@ -10,7 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
-from langchain_community.chat_models import ChatLiteLLM
+from langchain_litellm import ChatLiteLLM
 
 logger = logging.getLogger(__name__)
 
