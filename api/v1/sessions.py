@@ -33,12 +33,18 @@ _NODE_TO_PHASE = {
 }
 
 
+# All Redis keys are namespaced under "pantheon:" to isolate from other
+# applications sharing the same Redis instance.  When multi-tenancy lands
+# (S1-AUTH-1/S1-AUTH-2), extend these helpers to accept tenant_id.
+_NS = "pantheon"
+
+
 def _session_key(session_id: str) -> str:
-    return f"session:{session_id}"
+    return f"{_NS}:session:{session_id}"
 
 
 def _events_channel(session_id: str) -> str:
-    return f"session:{session_id}:events"
+    return f"{_NS}:session:{session_id}:events"
 
 
 def _get_redis(request: Request) -> Redis:
